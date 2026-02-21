@@ -9,21 +9,13 @@ import { getDatabase, ref, set, onValue } from 'firebase/database';
 // ============================================================================
 
 const firebaseConfig = {
-
-  apiKey: "AIzaSyAHEPrKyle1xNRXRBetDV0whgGTW-7_LlQ",
-
-  authDomain: "flat-analyzer-memory.firebaseapp.com",
-
-  databaseURL: "https://flat-analyzer-memory-default-rtdb.europe-west1.firebasedatabase.app",          // ← REQUIRED: e.g. "https://your-project-default-rtdb.europe-west1.firebasedatabase.app"
-
-  projectId: "flat-analyzer-memory",
-
-  storageBucket: "flat-analyzer-memory.firebasestorage.app",
-
-  messagingSenderId: "424420313683",
-
-  appId: "1:424420313683:web:7b1193b612bd61839894a6",
-
+  apiKey: "",
+  authDomain: "",
+  databaseURL: "",          // ← REQUIRED: e.g. "https://your-project-default-rtdb.europe-west1.firebasedatabase.app"
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
 };
 
 // ============================================================================
@@ -82,7 +74,7 @@ const restoreKeys = (obj) => {
 export function writeRoom(roomId, offers, parameterRanges) {
   if (!db || !roomId) return Promise.resolve();
   const data = sanitizeKeys({
-    offers: offers.map(({ image, ...rest }) => rest),
+    offers: offers.map(o => ({ ...o })),
     meta: { parameterRanges },
     updatedAt: Date.now(),
   });

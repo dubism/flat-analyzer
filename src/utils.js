@@ -400,7 +400,7 @@ export const loadFromStorage = () => {
 export const saveToStorage = (offers, parameterRanges) => {
   try {
     const data = {
-      offers: offers.map(({ image, ...rest }) => rest), // strip base64 images for size
+      offers: offers.map(o => ({ ...o })),
       meta: { parameterRanges }
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));

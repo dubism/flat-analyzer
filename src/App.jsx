@@ -204,6 +204,34 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage }) {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Compress image to max 800px wide, JPEG 0.7 quality (~50-100KB)
+  const compressImage = (dataUrl) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_W = 800;
+        const scale = img.width > MAX_W ? MAX_W / img.width : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = () => resolve(dataUrl); // fallback to original
+      img.src = dataUrl;
+    });
+  };
+
+  const loadImage = (file) => {
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const compressed = await compressImage(ev.target.result);
+      setImage(compressed);
+    };
+    reader.readAsDataURL(file);
+  };
+
   useEffect(() => {
     const handlePaste = (e) => {
       const items = e.clipboardData?.items;
@@ -212,11 +240,7 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage }) {
         if (item.type.startsWith('image/')) {
           e.preventDefault();
           const file = item.getAsFile();
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = (ev) => setImage(ev.target.result);
-            reader.readAsDataURL(file);
-          }
+          if (file) loadImage(file);
           break;
         }
       }
@@ -235,22 +259,14 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage }) {
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
-    if (file?.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setImage(ev.target.result);
-      reader.readAsDataURL(file);
-    }
+    if (file?.type.startsWith('image/')) loadImage(file);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer?.files?.[0];
-    if (file?.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setImage(ev.target.result);
-      reader.readAsDataURL(file);
-    }
+    if (file?.type.startsWith('image/')) loadImage(file);
   };
 
   return (
@@ -1096,9 +1112,8 @@ export default function FlatOfferAnalyzer() {
                       navigator.clipboard.writeText(window.location.href);
                     }}
                     className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs font-medium text-gray-700 whitespace-nowrap"
-                    title="Copy code"
                   >
-                    Copy code
+                    Copy link
                   </button>
                 </div>
                 <p className="text-[10px] text-gray-500 mb-2">Share the URL or room code. Anyone with it sees live updates.</p>
