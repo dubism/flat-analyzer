@@ -1,4 +1,4 @@
-export const OFFER_COLORS = [
+export const DEFAULT_PALETTE = [
   '#6366F1', // Indigo
   '#E07B54', // Terracotta
   '#0D9488', // Teal
@@ -10,6 +10,40 @@ export const OFFER_COLORS = [
   '#BE185D', // Burgundy
   '#059669', // Forest
 ];
+
+// Keep backward compat alias
+export const OFFER_COLORS = DEFAULT_PALETTE;
+
+// Generate a harmonious palette using golden-angle hue distribution
+export const generatePalette = (count = 10, seed = null) => {
+  const s = seed ?? Date.now();
+  // Simple seeded random
+  let r = s % 2147483647;
+  const rand = () => { r = (r * 16807) % 2147483647; return (r - 1) / 2147483646; };
+  
+  const startHue = Math.floor(rand() * 360);
+  const goldenAngle = 137.508;
+  const colors = [];
+  
+  for (let i = 0; i < count; i++) {
+    const hue = (startHue + i * goldenAngle) % 360;
+    const sat = 55 + rand() * 25;   // 55-80%
+    const lit = 42 + rand() * 16;    // 42-58%
+    colors.push(hslToHex(hue, sat, lit));
+  }
+  return colors;
+};
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
 
 export const OBJECTIVE_PARAMS = ['Price', 'Price per m²', 'Size', 'Rooms', 'Parking', 'Cellar', 'Balcony/Loggia'];
 export const SUBJECTIVE_PARAMS = ['Location', 'Light/Views', 'Layout', 'Renovation', 'Noise', 'Vibe'];

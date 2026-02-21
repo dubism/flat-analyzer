@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import {
-  OFFER_COLORS,
+  DEFAULT_PALETTE,
+  generatePalette,
   OBJECTIVE_PARAMS,
   SUBJECTIVE_PARAMS,
   DEFAULT_PARAM_RANGES,
@@ -315,8 +316,8 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage }) {
 // ADD OFFER MODAL
 // ============================================================================
 
-function AddOfferModal({ onClose, onAdd, existingOffers }) {
-  const [selectedColor, setSelectedColor] = useState(getNextColor(existingOffers));
+function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
+  const [selectedColor, setSelectedColor] = useState(getNextColor(existingOffers, palette));
   const [urlInput, setUrlInput] = useState('');
   const [pasteText, setPasteText] = useState('');
   const [extractionPhase, setExtractionPhase] = useState('input'); // 'input' | 'extracted'
@@ -428,7 +429,7 @@ function AddOfferModal({ onClose, onAdd, existingOffers }) {
           <div className="mb-3">
             <label className="block text-xs font-medium text-gray-700 mb-1">Color</label>
             <div className="flex gap-1.5 flex-wrap">
-              {OFFER_COLORS.map(color => (
+              {palette.map(color => (
                 <button
                   key={color}
                   type="button"
@@ -585,9 +586,9 @@ function AddOfferModal({ onClose, onAdd, existingOffers }) {
 // EDIT OFFER MODAL
 // ============================================================================
 
-function EditOfferModal({ offer, onClose, onSave }) {
+function EditOfferModal({ offer, onClose, onSave, palette }) {
   const [name, setName] = useState(offer.name || '');
-  const [selectedColor, setSelectedColor] = useState(offer.color || OFFER_COLORS[0]);
+  const [selectedColor, setSelectedColor] = useState(offer.color || palette[0]);
   const [formData, setFormData] = useState(offer.data || {});
 
   const handleSubmit = () => onSave({ name, data: formData, color: selectedColor });
@@ -606,7 +607,7 @@ function EditOfferModal({ offer, onClose, onSave }) {
           <div>
             <label className={labelClass}>Color</label>
             <div className="flex gap-1 flex-wrap">
-              {OFFER_COLORS.map(color => (
+              {palette.map(color => (
                 <button
                   key={color}
                   type="button"
@@ -672,6 +673,111 @@ function EmailModal({ offer, onClose }) {
 }
 
 // ============================================================================
+// PALETTE EDITOR
+// ============================================================================
+
+function PaletteEditor({ palette, onSave, onClose }) {
+  const [colors, setColors] = useState([...palette]);
+
+  const updateColor = (i, hex) => {
+    setColors(prev => prev.map((c, j) => j === i ? hex : c));
+  };
+
+  const removeColor = (i) => {
+    if (colors.length <= 3) return;
+    setColors(prev => prev.filter((_, j) => j !== i));
+  };
+
+  const addColor = () => {
+    if (colors.length >= 16) return;
+    // Pick a hue far from existing
+    const randomHex = '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+    setColors(prev => [...prev, randomHex]);
+  };
+
+  const regenerate = () => {
+    setColors(generatePalette(colors.length));
+  };
+
+  const resetDefault = () => {
+    setColors([...DEFAULT_PALETTE]);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-sm shadow-xl">
+        <div className="p-3 border-b border-gray-200 flex justify-between items-center">
+          <h2 className="text-base font-semibold">Color Palette</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <div className="p-4">
+          <div className="grid grid-cols-5 gap-3 mb-4">
+            {colors.map((color, i) => (
+              <div key={i} className="flex flex-col items-center gap-1">
+                <label className="relative cursor-pointer group">
+                  <div
+                    className="w-10 h-10 rounded-lg shadow-sm border border-gray-200 group-hover:scale-105 transition-transform"
+                    style={{ backgroundColor: color }}
+                  />
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => updateColor(i, e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
+                  {colors.length > 3 && (
+                    <button
+                      onClick={(e) => { e.preventDefault(); removeColor(i); }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    >
+                      ×
+                    </button>
+                  )}
+                </label>
+                <span className="text-[9px] text-gray-400 font-mono">{color}</span>
+              </div>
+            ))}
+            {colors.length < 16 && (
+              <div className="flex flex-col items-center gap-1">
+                <button
+                  onClick={addColor}
+                  className="w-10 h-10 rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  +
+                </button>
+                <span className="text-[9px] text-transparent">.</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 mb-4">
+            <button onClick={regenerate} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 transition-colors">
+              Generate new
+            </button>
+            <button onClick={resetDefault} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 transition-colors">
+              Reset default
+            </button>
+          </div>
+
+          {/* Preview strip */}
+          <div className="flex rounded-lg overflow-hidden h-3 mb-4">
+            {colors.map((c, i) => (
+              <div key={i} className="flex-1" style={{ backgroundColor: c }} />
+            ))}
+          </div>
+        </div>
+
+        <div className="p-3 border-t border-gray-200 flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">Cancel</button>
+          <button onClick={() => onSave(colors)} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -697,6 +803,7 @@ export default function FlatOfferAnalyzer() {
   const [pendingImport, setPendingImport] = useState(null);
   const [enabledObjective, setEnabledObjective] = useState(Object.fromEntries(OBJECTIVE_PARAMS.map(p => [p, true])));
   const [enabledSubjective, setEnabledSubjective] = useState(Object.fromEntries(SUBJECTIVE_PARAMS.map(p => [p, true])));
+  const [palette, setPalette] = useState([...DEFAULT_PALETTE]);
   const fileInputRef = useRef(null);
   
   // Resizable panels
@@ -754,6 +861,7 @@ export default function FlatOfferAnalyzer() {
     if (stored) {
       setOffers(stored.offers);
       setParameterRanges(stored.parameterRanges);
+      if (stored.palette) setPalette(stored.palette);
     }
     // Init Firebase and check URL for room
     const db = initFirebase();
@@ -795,11 +903,14 @@ export default function FlatOfferAnalyzer() {
       if (data.meta?.parameterRanges) {
         setParameterRanges({ ...DEFAULT_PARAM_RANGES, ...data.meta.parameterRanges });
       }
+      if (data.meta?.palette) {
+        setPalette(data.meta.palette);
+      }
       setTimeout(() => { remoteUpdateRef.current = false; }, 300);
     });
 
     // Push current data to Firebase (for new rooms)
-    writeRoom(roomId, offers, parameterRanges);
+    writeRoom(roomId, offers, parameterRanges, palette);
 
     return unsub;
   }, [roomId]);
@@ -809,16 +920,16 @@ export default function FlatOfferAnalyzer() {
     if (!roomId || remoteUpdateRef.current) return;
     const timer = setTimeout(() => {
       if (!remoteUpdateRef.current) {
-        writeRoom(roomId, offers, parameterRanges);
+        writeRoom(roomId, offers, parameterRanges, palette);
       }
     }, 800);
     return () => clearTimeout(timer);
-  }, [offers, parameterRanges, roomId]);
+  }, [offers, parameterRanges, palette, roomId]);
 
   // Always save to localStorage as fallback
   useEffect(() => {
-    if (offers.length) saveToStorage(offers, parameterRanges);
-  }, [offers, parameterRanges]);
+    if (offers.length) saveToStorage(offers, parameterRanges, palette);
+  }, [offers, parameterRanges, palette]);
 
   // Sync actions
   const handleCreateRoom = useCallback(() => {
@@ -1226,6 +1337,9 @@ export default function FlatOfferAnalyzer() {
           <div className="flex items-center gap-1">
             {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded text-xs">Demo</button>}
             {renderSyncButton()}
+            <button onClick={() => setModal('palette')} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg" title="Colors">
+              <div className="w-3.5 h-3.5 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
+            </button>
             <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg font-medium text-xs">+ Add</button>
           </div>
         </header>
@@ -1427,9 +1541,16 @@ export default function FlatOfferAnalyzer() {
         </nav>
 
         {/* Modals */}
-        {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} />}
-        {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} />}
+        {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} />}
+        {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} palette={palette} />}
         {modal === 'email' && currentOffer && <EmailModal offer={currentOffer} onClose={() => setModal(null)} />}
+        {modal === 'palette' && (
+          <PaletteEditor
+            palette={palette}
+            onSave={(p) => { setPalette(p); setModal(null); }}
+            onClose={() => setModal(null)}
+          />
+        )}
         {deleteTarget && <DeleteConfirmModal offerName={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
         {imagePasteTarget && (
           <ImagePasteModal
@@ -1511,6 +1632,9 @@ export default function FlatOfferAnalyzer() {
           {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg text-xs">Demo</button>}
           <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">+ Add</button>
           {renderSyncButton()}
+          <button onClick={() => setModal('palette')} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Color palette">
+            <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
+          </button>
           <button onClick={() => fileInputRef.current?.click()} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Import">↑</button>
           <input ref={fileInputRef} type="file" accept=".json" onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])} className="hidden" />
           <button onClick={exportData} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Export">↓</button>
@@ -1802,9 +1926,16 @@ export default function FlatOfferAnalyzer() {
       </div>
 
       {/* Modals */}
-      {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} />}
-      {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} />}
+      {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} />}
+      {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} palette={palette} />}
       {modal === 'email' && currentOffer && <EmailModal offer={currentOffer} onClose={() => setModal(null)} />}
+      {modal === 'palette' && (
+        <PaletteEditor
+          palette={palette}
+          onSave={(p) => { setPalette(p); setModal(null); }}
+          onClose={() => setModal(null)}
+        />
+      )}
       {deleteTarget && <DeleteConfirmModal offerName={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
       {imagePasteTarget && (
         <ImagePasteModal

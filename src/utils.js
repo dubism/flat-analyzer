@@ -1,5 +1,6 @@
 import {
   OFFER_COLORS,
+  DEFAULT_PALETTE,
   OBJECTIVE_PARAMS,
   SUBJECTIVE_PARAMS,
   DEFAULT_PARAM_RANGES,
@@ -31,12 +32,12 @@ export const parseSize = (sizeStr) => {
   return match ? parseFloat(match[1].replace(',', '.')) : null;
 };
 
-export const getNextColor = (offers) => {
+export const getNextColor = (offers, palette = OFFER_COLORS) => {
   const usedColors = new Set(offers.map(o => o.color));
-  for (const color of OFFER_COLORS) {
+  for (const color of palette) {
     if (!usedColors.has(color)) return color;
   }
-  return OFFER_COLORS[offers.length % OFFER_COLORS.length];
+  return palette[offers.length % palette.length];
 };
 
 export const formatPrice = (price) => {
@@ -388,7 +389,8 @@ export const loadFromStorage = () => {
           ...o,
           subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
         })),
-        parameterRanges: { ...DEFAULT_PARAM_RANGES, ...parsed.meta?.parameterRanges }
+        parameterRanges: { ...DEFAULT_PARAM_RANGES, ...parsed.meta?.parameterRanges },
+        palette: parsed.meta?.palette || null,
       };
     }
   } catch (e) {
@@ -397,11 +399,13 @@ export const loadFromStorage = () => {
   return null;
 };
 
-export const saveToStorage = (offers, parameterRanges) => {
+export const saveToStorage = (offers, parameterRanges, palette = null) => {
   try {
+    const meta = { parameterRanges };
+    if (palette) meta.palette = palette;
     const data = {
       offers: offers.map(o => ({ ...o })),
-      meta: { parameterRanges }
+      meta,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {
