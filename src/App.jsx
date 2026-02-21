@@ -622,6 +622,11 @@ function EditOfferModal({ offer, onClose, onSave }) {
             <div><label className={labelClass}>Size</label><input value={formData.SIZE || ''} onChange={(e) => setFormData(p => ({ ...p, SIZE: e.target.value }))} className={inputClass} /></div>
             <div><label className={labelClass}>Rooms</label><input value={formData.ROOMS || ''} onChange={(e) => setFormData(p => ({ ...p, ROOMS: e.target.value }))} className={inputClass} /></div>
             <div><label className={labelClass}>Floor</label><input value={formData.FLOOR || ''} onChange={(e) => setFormData(p => ({ ...p, FLOOR: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>Balcony</label><input value={formData.BALCONY || ''} onChange={(e) => setFormData(p => ({ ...p, BALCONY: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>Cellar</label><input value={formData.CELLAR || ''} onChange={(e) => setFormData(p => ({ ...p, CELLAR: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>Parking</label><input value={formData.PARKING || ''} onChange={(e) => setFormData(p => ({ ...p, PARKING: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>Building</label><input value={formData.BUILDING || ''} onChange={(e) => setFormData(p => ({ ...p, BUILDING: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>Energy</label><input value={formData.ENERGY || ''} onChange={(e) => setFormData(p => ({ ...p, ENERGY: e.target.value }))} className={inputClass} /></div>
           </div>
           <div><label className={labelClass}>Address</label><input value={formData.ADDRESS || ''} onChange={(e) => setFormData(p => ({ ...p, ADDRESS: e.target.value }))} className={inputClass} /></div>
           <div><label className={labelClass}>Location</label><input value={formData.LOCATION || ''} onChange={(e) => setFormData(p => ({ ...p, LOCATION: e.target.value }))} className={inputClass} /></div>
@@ -1281,7 +1286,7 @@ export default function FlatOfferAnalyzer() {
                   )}
 
                   <div className="space-y-1.5 text-sm mb-4">
-                    {['PRICE', 'SIZE', 'ROOMS', 'FLOOR', 'ADDRESS', 'LOCATION'].map(k => currentOffer.data?.[k] && (
+                    {['PRICE', 'SIZE', 'ROOMS', 'FLOOR', 'ADDRESS', 'LOCATION', 'BALCONY', 'CELLAR', 'PARKING', 'BUILDING', 'ENERGY'].map(k => currentOffer.data?.[k] && (
                       <div key={k} className="flex justify-between">
                         <span className="text-gray-500">{k}</span>
                         <span className="font-medium truncate ml-2">{k === 'PRICE' ? formatPrice(parsePrice(currentOffer.data[k])) : String(currentOffer.data[k])}</span>
@@ -1616,7 +1621,7 @@ export default function FlatOfferAnalyzer() {
                 )}
 
                 <div className="space-y-1 text-sm">
-                  {['PRICE', 'SIZE', 'ROOMS', 'FLOOR', 'ADDRESS', 'LOCATION'].map(k => currentOffer.data?.[k] && (
+                  {['PRICE', 'SIZE', 'ROOMS', 'FLOOR', 'ADDRESS', 'LOCATION', 'BALCONY', 'CELLAR', 'PARKING', 'BUILDING', 'ENERGY'].map(k => currentOffer.data?.[k] && (
                     <div key={k} className="flex justify-between">
                       <span className="text-gray-500">{k}</span>
                       <span className="font-medium truncate ml-2">{k === 'PRICE' ? formatPrice(parsePrice(currentOffer.data[k])) : currentOffer.data[k]}</span>
