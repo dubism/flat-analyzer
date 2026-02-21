@@ -1096,9 +1096,9 @@ export default function FlatOfferAnalyzer() {
                       navigator.clipboard.writeText(window.location.href);
                     }}
                     className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs font-medium text-gray-700 whitespace-nowrap"
-                    title="Copy link"
+                    title="Copy code"
                   >
-                    Copy link
+                    Copy code
                   </button>
                 </div>
                 <p className="text-[10px] text-gray-500 mb-2">Share the URL or room code. Anyone with it sees live updates.</p>
