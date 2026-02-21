@@ -216,21 +216,112 @@ export function parseListingTextWithSources(text) {
   if (brickMatch) recordMatch('BUILDING', 'Brick', brickMatch);
   else { const panelMatch = cleaned.match(/panel/i); if (panelMatch) recordMatch('BUILDING', 'Panel', panelMatch); }
 
-  // Location
-  const locationMatch = cleaned.match(/(Vinohrady|Žižkov|Smíchov|Karlín|Holešovice|Holešovičky|Dejvice|Letná|Libeň|Rokoska|Kobylisy|Bubeneč|Vršovice|Nusle|Břevnov|Strašnice|Praha\s*\d+)/i);
+  // Location — expanded Prague neighborhoods
+  const locationMatch = cleaned.match(/(Vinohrady|Žižkov|Smíchov|Karlín|Holešovice|Holešovičky|Dejvice|Letná|Libeň|Rokoska|Kobylisy|Bubeneč|Vršovice|Nusle|Břevnov|Strašnice|Vysočany|Prosek|Troja|Braník|Podolí|Modřany|Krč|Michle|Záběhlice|Hostivař|Chodov|Háje|Černý\s*Most|Hloubětín|Malešice|Stodůlky|Řepy|Zbraslav|Radotín|Barrandov|Smíchov|Jinonice|Košíře|Motol|Veleslavín|Vokovice|Suchdol|Bohnice|Čimice|Ďáblice|Střížkov|Kbely|Vinoř|Satalice|Horní\s*Počernice|Dolní\s*Počernice|Uhříněves|Benice|Pitkovice|Křeslice|Šeberov|Kunratice|Libuš|Kamýk|Lhotka|Hodkovičky|Dvorce|Hlubočepy|Strahov|Hradčany|Malá\s*Strana|Staré\s*Město|Nové\s*Město|Josefov|Praha\s*\d+)/i);
   if (locationMatch) recordMatch('LOCATION', locationMatch[1], locationMatch);
 
-  // Address
-  const addressMatch1 = cleaned.match(/(?:ulice|ul\.?)[:\s]*([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][a-záčďéěíňóřšťúůýž]+)/i);
-  if (addressMatch1) { recordMatch('ADDRESS', addressMatch1[1], addressMatch1); }
-  else {
-    const titleMatch = cleaned.match(/prodej\s+bytu[^,]*,\s*([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][a-záčďéěíňóřšťúůýž]+(?:\s+[a-záčďéěíňóřšťúůýž]+)?)/i);
-    if (titleMatch) { recordMatch('ADDRESS', titleMatch[1], titleMatch); }
-    else {
-      const streetNumMatch = cleaned.match(/([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][a-záčďéěíňóřšťúůýž]+(?:\s+[a-záčďéěíňóřšťúůýž]+)?)\s+\d{1,4}(?:\/\d+)?(?:\s*,)/);
-      if (streetNumMatch) { recordMatch('ADDRESS', streetNumMatch[1], streetNumMatch); }
-      else if (values.LOCATION) { values.ADDRESS = values.LOCATION; sources.ADDRESS = sources.LOCATION; }
+  // Address — Czech street detection with multiple strategies
+  // Czech unicode character class helpers
+  const CZ_UPPER = 'A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ';
+  const CZ_LOWER = 'a-záčďéěíňóřšťúůýž';
+  const CZ_LETTER = CZ_UPPER + CZ_LOWER;
+  
+  let addressFound = false;
+  
+  // Strategy 1: Sreality/Bezrealitky title — "Prodej bytu X+Y NN m², StreetName, Praha"
+  // Also handles "Prodej bytu X+Y, StreetName NUMBER, Praha"
+  const titlePatterns = [
+    new RegExp(`prodej\\s+bytu[^,]*,\\s*([${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)*(?:\\s+\\d{1,4}(?:\\/\\d+)?)?)\\s*,`, 'i'),
+    new RegExp(`prodej\\s+bytu[^,]*,\\s*((?:Na|U|Pod|Nad|K|V|Za|Ke|Při)\\s+[${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)*(?:\\s+\\d{1,4}(?:\\/\\d+)?)?)\\s*,`, 'i'),
+  ];
+  for (const pat of titlePatterns) {
+    const m = cleaned.match(pat);
+    if (m) { addressFound = recordMatch('ADDRESS', m[1].trim(), m); break; }
+  }
+  
+  // Strategy 2: Prepositional streets — "Na Příkopě 12", "U Uranie", "Pod Kaštany 4/6"
+  if (!addressFound) {
+    const prepMatch = cleaned.match(new RegExp(
+      `((?:Na|U|Pod|Nad|K|V|Za|Ke|Při)\\s+[${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)*)(?:\\s+(\\d{1,4}(?:\\/\\d+)?))?`, 'i'
+    ));
+    if (prepMatch) {
+      const fullAddr = prepMatch[2] ? `${prepMatch[1]} ${prepMatch[2]}` : prepMatch[1];
+      addressFound = recordMatch('ADDRESS', fullAddr, prepMatch);
     }
+  }
+  
+  // Strategy 3: "nábřeží/náměstí/třída" street types — "Bubenské nábřeží 866/11"
+  if (!addressFound) {
+    const typeMatch = cleaned.match(new RegExp(
+      `([${CZ_UPPER}][${CZ_LOWER}]+(?:[${CZ_LOWER}]é|[${CZ_LOWER}]á|[${CZ_LOWER}]o))\\s+(nábřeží|náměstí|třída|bulvár)(?:\\s+(\\d{1,4}(?:\\/\\d+)?))?`, 'i'
+    ));
+    if (typeMatch) {
+      let fullAddr = `${typeMatch[1]} ${typeMatch[2]}`;
+      if (typeMatch[3]) fullAddr += ` ${typeMatch[3]}`;
+      addressFound = recordMatch('ADDRESS', fullAddr, typeMatch);
+    }
+  }
+  
+  // Strategy 4: Czech street suffix + house number — "Veletržní 12", "Dělnická 347/5"
+  // Common Czech adjective endings used for streets
+  if (!addressFound) {
+    const suffixMatch = cleaned.match(new RegExp(
+      `([${CZ_UPPER}][${CZ_LOWER}]*(?:ní|ská|ské|ského|ová|ovo|ovy|ova|ná|né|ného|cká|cké|ckého|ská|ího|čka|ova|ova))\\s+(\\d{1,4}(?:\\/\\d+)?)`, ''
+    ));
+    if (suffixMatch) {
+      // Exclude false positives: floor patterns like "2. patro", size like "74 m²"
+      const afterNum = cleaned.slice(cleaned.indexOf(suffixMatch[0]) + suffixMatch[0].length, cleaned.indexOf(suffixMatch[0]) + suffixMatch[0].length + 15);
+      if (!/^\s*(m²|m\b|patro|podlaží|np|kč|czk)/i.test(afterNum)) {
+        addressFound = recordMatch('ADDRESS', `${suffixMatch[1]} ${suffixMatch[2]}`, suffixMatch);
+      }
+    }
+  }
+  
+  // Strategy 5: "ulice"/"ul." prefix (original pattern, broadened)
+  if (!addressFound) {
+    const ulMatch = cleaned.match(new RegExp(
+      `(?:ulice|ul\\.?)\\s*:?\\s*([${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)*)(?:\\s+(\\d{1,4}(?:\\/\\d+)?))?`, 'i'
+    ));
+    if (ulMatch) {
+      const fullAddr = ulMatch[2] ? `${ulMatch[1]} ${ulMatch[2]}` : ulMatch[1];
+      addressFound = recordMatch('ADDRESS', fullAddr, ulMatch);
+    }
+  }
+  
+  // Strategy 6: "adresa:" label  
+  if (!addressFound) {
+    const adresaMatch = cleaned.match(new RegExp(
+      `adresa\\s*:?\\s*([${CZ_UPPER}][${CZ_LETTER}]+(?:\\s+[${CZ_LETTER}]+)*(?:\\s+\\d{1,4}(?:\\/\\d+)?)?)`, 'i'
+    ));
+    if (adresaMatch) {
+      addressFound = recordMatch('ADDRESS', adresaMatch[1].trim(), adresaMatch);
+    }
+  }
+  
+  // Strategy 7: Czech street name (recognized suffix) standing alone near a comma or Praha
+  if (!addressFound) {
+    const standaloneMatch = cleaned.match(new RegExp(
+      `([${CZ_UPPER}][${CZ_LOWER}]*(?:ní|ská|ské|ová|ovo|ova|ná|né|cká|cké))\\s*,\\s*(?:Praha|${values.LOCATION || '(?!)'})`, 'i'
+    ));
+    if (standaloneMatch) {
+      addressFound = recordMatch('ADDRESS', standaloneMatch[1], standaloneMatch);
+    }
+  }
+  
+  // Strategy 8: Generic "CapitalWord NUMBER, Praha" 
+  if (!addressFound) {
+    const genericMatch = cleaned.match(new RegExp(
+      `([${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)?)\\s+(\\d{1,4}(?:\\/\\d+)?)\\s*,\\s*(?:Praha|${values.LOCATION || '(?!)'})`, 'i'
+    ));
+    if (genericMatch) {
+      addressFound = recordMatch('ADDRESS', `${genericMatch[1]} ${genericMatch[2]}`, genericMatch);
+    }
+  }
+  
+  // Fallback: use Location
+  if (!addressFound && values.LOCATION) {
+    values.ADDRESS = values.LOCATION;
+    sources.ADDRESS = sources.LOCATION;
   }
 
   // Energy

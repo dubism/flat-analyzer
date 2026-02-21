@@ -5,7 +5,6 @@ import {
   OBJECTIVE_PARAMS,
   SUBJECTIVE_PARAMS,
   DEFAULT_PARAM_RANGES,
-  FIELD_SCHEMA,
 } from './config';
 import {
   generateId,
@@ -18,11 +17,17 @@ import {
   normalizeSubjectiveRatings,
   calculateSubjectiveRatings,
   parseListingTextWithSources,
-  findSourceInText,
   loadFromStorage,
   saveToStorage,
   loadDemoOffers,
 } from './utils';
+import {
+  isConfigured as isFirebaseConfigured,
+  initFirebase,
+  generateRoomCode,
+  writeRoom,
+  subscribeToRoom,
+} from './firebase';
 
 // ============================================================================
 // HOOKS
@@ -298,16 +303,12 @@ function AddOfferModal({ onClose, onAdd, existingOffers }) {
   const [selectedColor, setSelectedColor] = useState(getNextColor(existingOffers));
   const [urlInput, setUrlInput] = useState('');
   const [pasteText, setPasteText] = useState('');
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [aiAvailable, setAiAvailable] = useState(true);
   const [extractionPhase, setExtractionPhase] = useState('input'); // 'input' | 'extracted'
   
-  // Extraction results with sources
-  const [regexResult, setRegexResult] = useState(null); // { values, sources }
-  const [aiResult, setAiResult] = useState(null); // { values, sources }
-  const [activeTab, setActiveTab] = useState(null); // 'regex' | 'ai'
+  // Extraction result
+  const [result, setResult] = useState(null); // { values, sources }
   
-  // User edits (pinned, survive tab switching)
+  // User edits (survive re-analysis)
   const [userEdits, setUserEdits] = useState({});
   
   // Hover state for source highlighting
@@ -315,11 +316,8 @@ function AddOfferModal({ onClose, onAdd, existingOffers }) {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const textareaRef = useRef(null);
   
-  const getActiveResult = () => activeTab === 'ai' ? aiResult : regexResult;
-  
   const getFieldValue = (field) => {
     if (userEdits[field] !== undefined) return userEdits[field];
-    const result = getActiveResult();
     if (result?.values?.[field] !== undefined) return result.values[field];
     if (SUBJECTIVE_PARAMS.includes(field)) return 5;
     return '';
@@ -335,17 +333,12 @@ function AddOfferModal({ onClose, onAdd, existingOffers }) {
   
   const isFieldFromExtraction = (field) => {
     if (userEdits[field] !== undefined) return false;
-    const result = getActiveResult();
     return result?.values?.[field] !== undefined;
   };
   
-  const getFieldSource = (field) => {
-    const result = getActiveResult();
-    return result?.sources?.[field] || null;
-  };
+  const getFieldSource = (field) => result?.sources?.[field] || null;
   
   const handleFieldFocus = (field) => {
-    // Mark as user-edited on focus (turns black)
     if (userEdits[field] === undefined && isFieldFromExtraction(field)) {
       setUserEdits(prev => ({ ...prev, [field]: getFieldValue(field) }));
     }
@@ -355,132 +348,22 @@ function AddOfferModal({ onClose, onAdd, existingOffers }) {
     setUserEdits(prev => ({ ...prev, [field]: value }));
   };
   
-  // Highlight source in textarea on hover — use overlay approach
   const highlightInfo = useMemo(() => {
     if (!hoveredField) return null;
-    const source = getFieldSource(hoveredField);
-    if (!source) return null;
-    return source;
-  }, [hoveredField, activeTab, regexResult, aiResult]);
+    return getFieldSource(hoveredField);
+  }, [hoveredField, result]);
   
-  // AI assumed available — errors handled on actual extraction attempt
-  
-  const runRegexExtract = () => {
-    const result = parseListingTextWithSources(pasteText);
-    result.values.URL = urlInput;
-    setRegexResult(result);
-    setActiveTab('regex');
+  const runAnalysis = () => {
+    const res = parseListingTextWithSources(pasteText);
+    res.values.URL = urlInput;
+    setResult(res);
     setExtractionPhase('extracted');
   };
-  
-  const runAiExtract = async () => {
-    if (!pasteText.trim()) return;
-    setIsExtracting(true);
-    
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 1500,
-          messages: [{
-            role: "user",
-            content: `Extract Czech real estate listing data. Return ONLY valid JSON, no markdown.
 
-TEXT:
-"""
-${pasteText}
-"""
-
-Return JSON with these fields (use null if not found):
-
-OBJECTIVE (use raw values, no units in the value):
-- "name": "StreetName RoomLayout" (e.g. "Veletržní 3+kk")
-- "PRICE": number in CZK (e.g. 12500000)
-- "SIZE": number in m² (e.g. 75.5)
-- "ROOMS": string (e.g. "3+kk", "2+1")
-- "FLOOR": string (e.g. "3", "2/6")
-- "ADDRESS": street, district
-- "LOCATION": neighborhood (Holešovice, Letná, etc.)
-- "BALCONY": number in m² or 0
-- "CELLAR": number in m² or 0
-- "PARKING": "Garage"/"Dedicated"/"None"
-- "BUILDING": "Brick"/"Panel"/"Mixed"
-- "ENERGY": letter A-G
-
-SUBJECTIVE (1-10, use 5 if uncertain):
-- "Location": transport + amenities
-- "Light/Views": natural light, views
-- "Layout": room layout quality
-- "Renovation": condition (10=new, 1=needs work)
-- "Noise": quietness (10=quiet, 1=noisy)
-- "Vibe": character, charm
-
-Return ONLY the JSON object.`
-          }]
-        })
-      });
-
-      if (!response.ok) {
-        setAiAvailable(false);
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      let responseText = '';
-      if (data.content) {
-        for (const block of data.content) {
-          if (block.type === 'text') responseText += block.text;
-        }
-      }
-      
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        const values = {};
-        const sources = {};
-        
-        for (const [k, v] of Object.entries(parsed)) {
-          if (v !== null && v !== 'null' && v !== undefined && v !== '') {
-            if (SUBJECTIVE_PARAMS.includes(k)) {
-              values[k] = typeof v === 'number' ? v : parseFloat(v) || 5;
-            } else {
-              values[k] = v;
-            }
-            // Find source in text
-            const source = findSourceInText(pasteText, k, v);
-            if (source) sources[k] = source;
-          }
-        }
-        
-        values.URL = urlInput;
-        setAiResult({ values, sources });
-        setActiveTab('ai');
-        setExtractionPhase('extracted');
-        
-        // Also run regex in background for comparison
-        if (!regexResult) {
-          const regexRes = parseListingTextWithSources(pasteText);
-          regexRes.values.URL = urlInput;
-          setRegexResult(regexRes);
-        }
-      }
-    } catch (err) {
-      console.error('AI extraction error:', err);
-      setAiAvailable(false);
-    }
-    
-    setIsExtracting(false);
-  };
-  
-  const handleTabSwitch = (tab) => {
-    if (tab === 'regex' && !regexResult) return;
-    if (tab === 'ai' && !aiResult) {
-      if (aiAvailable && !isExtracting) runAiExtract();
-      return;
-    }
-    setActiveTab(tab);
+  const handleReanalyze = () => {
+    setExtractionPhase('input');
+    setResult(null);
+    setUserEdits({});
   };
   
   const handleSubmit = () => {
@@ -541,7 +424,7 @@ Return ONLY the JSON object.`
             </div>
           </div>
           
-          {/* URL input - always editable */}
+          {/* URL input */}
           <div className="mb-3">
             <label className="block text-xs font-medium text-gray-700 mb-1">Listing URL</label>
             <input
@@ -553,56 +436,31 @@ Return ONLY the JSON object.`
             />
           </div>
           
-          {/* Listing text + extraction controls */}
+          {/* Listing text */}
           <div className={`mb-3 ${extractionPhase === 'extracted' ? 'pb-3 border-b border-gray-200' : ''}`}>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-gray-700">Listing Text</label>
               {extractionPhase === 'extracted' && (
-                <div className="flex rounded-lg overflow-hidden border border-gray-300">
-                  <button
-                    onClick={() => handleTabSwitch('regex')}
-                    className={`px-3 py-1 text-xs font-medium transition-colors ${activeTab === 'regex' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    Regex
-                  </button>
-                  <button
-                    onClick={() => handleTabSwitch('ai')}
-                    disabled={!aiAvailable || isExtracting}
-                    className={`px-3 py-1 text-xs font-medium transition-colors border-l border-gray-300 ${activeTab === 'ai' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'} disabled:opacity-50`}
-                  >
-                    {isExtracting ? '...' : 'AI'}
-                  </button>
-                </div>
+                <button onClick={handleReanalyze} className="text-xs text-blue-600 hover:text-blue-700">← Edit text</button>
               )}
             </div>
-            <div className="relative">
-              <textarea
-                ref={textareaRef}
-                value={pasteText}
-                onChange={(e) => extractionPhase === 'input' && setPasteText(e.target.value)}
-                readOnly={extractionPhase === 'extracted'}
-                placeholder="Paste the full listing text from the website..."
-                className={`w-full px-2 py-1.5 border border-gray-300 rounded text-sm resize-none ${extractionPhase === 'extracted' ? 'h-20 bg-gray-50 text-gray-600' : 'h-32'}`}
-              />
-            </div>
+            <textarea
+              ref={textareaRef}
+              value={pasteText}
+              onChange={(e) => extractionPhase === 'input' && setPasteText(e.target.value)}
+              readOnly={extractionPhase === 'extracted'}
+              placeholder="Paste the full listing text from the website..."
+              className={`w-full px-2 py-1.5 border border-gray-300 rounded text-sm resize-none ${extractionPhase === 'extracted' ? 'h-20 bg-gray-50 text-gray-600' : 'h-32'}`}
+            />
             
             {extractionPhase === 'input' && (
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={runRegexExtract}
-                  disabled={!pasteText.trim()}
-                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
-                >
-                  Extract (Regex)
-                </button>
-                <button
-                  onClick={runAiExtract}
-                  disabled={!pasteText.trim() || !aiAvailable || isExtracting}
-                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isExtracting ? 'Extracting...' : aiAvailable ? 'Extract (AI)' : 'AI Unavailable'}
-                </button>
-              </div>
+              <button
+                onClick={runAnalysis}
+                disabled={!pasteText.trim()}
+                className="w-full mt-2 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                Analyze
+              </button>
             )}
           </div>
           
@@ -827,6 +685,13 @@ export default function FlatOfferAnalyzer() {
   const [isResizingDetail, setIsResizingDetail] = useState(false);
   const containerRef = useRef(null);
 
+  // Firebase sync state
+  const [roomId, setRoomId] = useState(null);
+  const [showSyncPanel, setShowSyncPanel] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('disconnected'); // 'disconnected' | 'connected' | 'error'
+  const remoteUpdateRef = useRef(false);
+  const [joinCode, setJoinCode] = useState('');
+
   // Handle panel resize
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -862,19 +727,98 @@ export default function FlatOfferAnalyzer() {
     };
   }, [isResizingList, isResizingDetail, listWidth]);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount + init Firebase
   useEffect(() => {
     const stored = loadFromStorage();
     if (stored) {
       setOffers(stored.offers);
       setParameterRanges(stored.parameterRanges);
     }
+    // Init Firebase and check URL for room
+    const db = initFirebase();
+    if (db) {
+      const params = new URLSearchParams(window.location.search);
+      const room = params.get('room');
+      if (room) setRoomId(room);
+    }
   }, []);
 
-  // Save to storage on change
+  // Subscribe to Firebase room
+  useEffect(() => {
+    if (!roomId) {
+      setSyncStatus('disconnected');
+      // Remove room from URL
+      const url = new URL(window.location);
+      if (url.searchParams.has('room')) {
+        url.searchParams.delete('room');
+        window.history.replaceState({}, '', url);
+      }
+      return;
+    }
+
+    setSyncStatus('connected');
+
+    // Put room in URL so it's shareable
+    const url = new URL(window.location);
+    url.searchParams.set('room', roomId);
+    window.history.replaceState({}, '', url);
+
+    const unsub = subscribeToRoom(roomId, (data) => {
+      remoteUpdateRef.current = true;
+      if (data.offers) {
+        setOffers(data.offers.map(o => ({
+          ...o,
+          subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
+        })));
+      }
+      if (data.meta?.parameterRanges) {
+        setParameterRanges({ ...DEFAULT_PARAM_RANGES, ...data.meta.parameterRanges });
+      }
+      setTimeout(() => { remoteUpdateRef.current = false; }, 300);
+    });
+
+    // Push current data to Firebase (for new rooms)
+    writeRoom(roomId, offers, parameterRanges);
+
+    return unsub;
+  }, [roomId]);
+
+  // Sync local changes to Firebase (debounced)
+  useEffect(() => {
+    if (!roomId || remoteUpdateRef.current) return;
+    const timer = setTimeout(() => {
+      if (!remoteUpdateRef.current) {
+        writeRoom(roomId, offers, parameterRanges);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [offers, parameterRanges, roomId]);
+
+  // Always save to localStorage as fallback
   useEffect(() => {
     if (offers.length) saveToStorage(offers, parameterRanges);
   }, [offers, parameterRanges]);
+
+  // Sync actions
+  const handleCreateRoom = useCallback(() => {
+    const code = generateRoomCode();
+    setRoomId(code);
+    setShowSyncPanel(false);
+  }, []);
+
+  const handleJoinRoom = useCallback(() => {
+    const code = joinCode.trim().toLowerCase();
+    if (code.length >= 4) {
+      setRoomId(code);
+      setShowSyncPanel(false);
+      setJoinCode('');
+    }
+  }, [joinCode]);
+
+  const handleDisconnect = useCallback(() => {
+    setRoomId(null);
+    setShowSyncPanel(false);
+  }, []);
 
   const currentOffer = useMemo(() => offers.find(o => o.id === currentOfferId), [offers, currentOfferId]);
   const starredOffers = useMemo(() => offers.filter(o => o.featured && (showSoldInGraph || !o.sold)), [offers, showSoldInGraph]);
@@ -1115,6 +1059,75 @@ export default function FlatOfferAnalyzer() {
     }
   }, [importData]);
 
+  // Sync UI
+  const renderSyncButton = () => {
+    const fbConfigured = isFirebaseConfigured();
+    
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setShowSyncPanel(!showSyncPanel)}
+          className={`p-1.5 rounded-lg transition-colors ${roomId ? 'text-green-600 hover:bg-green-50' : 'text-gray-500 hover:bg-gray-100'}`}
+          title={roomId ? `Synced: ${roomId}` : 'Sync'}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          {roomId && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full" />}
+        </button>
+        
+        {showSyncPanel && (
+          <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3">
+            {!fbConfigured ? (
+              <div className="text-xs text-gray-600">
+                <p className="font-medium mb-1">Sync not configured</p>
+                <p>Add your Firebase config to <code className="bg-gray-100 px-1 rounded">src/firebase.js</code> to enable real-time sync across devices.</p>
+              </div>
+            ) : roomId ? (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-2 h-2 bg-green-500 rounded-full" />
+                  <span className="text-xs font-medium text-green-700">Connected</span>
+                </div>
+                <div className="flex items-center gap-1 mb-3">
+                  <code className="flex-1 bg-gray-100 px-2 py-1.5 rounded text-sm font-mono tracking-wider text-center">{roomId}</code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(window.location.href);
+                    }}
+                    className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                    title="Copy link"
+                  >
+                    📋
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-500 mb-2">Share the URL or room code. Anyone with it sees live updates.</p>
+                <button onClick={handleDisconnect} className="w-full py-1.5 text-xs text-red-600 hover:bg-red-50 rounded border border-red-200">Disconnect</button>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-gray-600 mb-3">Sync offers across devices in real time.</p>
+                <button onClick={handleCreateRoom} className="w-full py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 mb-2">
+                  Create Room
+                </button>
+                <div className="flex gap-1">
+                  <input
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
+                    placeholder="Room code"
+                    className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs font-mono"
+                  />
+                  <button onClick={handleJoinRoom} disabled={joinCode.trim().length < 4} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs font-medium disabled:opacity-50">Join</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Render offer item
   const renderOfferItem = (offer, inSoldSection = false) => {
     const isSelected = offer.id === currentOfferId;
@@ -1192,6 +1205,7 @@ export default function FlatOfferAnalyzer() {
           <h1 className="text-base font-semibold text-gray-900">Flat Analyzer</h1>
           <div className="flex items-center gap-1">
             {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded text-xs">Demo</button>}
+            {renderSyncButton()}
             <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg font-medium text-xs">+ Add</button>
           </div>
         </header>
@@ -1476,6 +1490,7 @@ export default function FlatOfferAnalyzer() {
         <div className="flex items-center gap-1">
           {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg text-xs">Demo</button>}
           <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">+ Add</button>
+          {renderSyncButton()}
           <button onClick={() => fileInputRef.current?.click()} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Import">↑</button>
           <input ref={fileInputRef} type="file" accept=".json" onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])} className="hidden" />
           <button onClick={exportData} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Export">↓</button>
