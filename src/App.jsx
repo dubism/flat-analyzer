@@ -869,6 +869,7 @@ export default function FlatOfferAnalyzer() {
   // Load from localStorage on mount + init Firebase
   useEffect(() => {
     const stored = loadFromStorage();
+    console.log('[FA] stored:', stored?.offers?.length, 'offers');
     if (stored) {
       setOffers(stored.offers);
       setParameterRanges(stored.parameterRanges);
@@ -876,15 +877,18 @@ export default function FlatOfferAnalyzer() {
     }
     // Init Firebase and check URL for room
     const db = initFirebase();
+    console.log('[FA] firebase init:', db ? 'ok' : 'FAILED');
     if (db) {
       const params = new URLSearchParams(window.location.search);
       const room = params.get('room');
+      console.log('[FA] room from URL:', room);
       if (room) setRoomId(room);
     }
   }, []);
 
   // Subscribe to Firebase room
   useEffect(() => {
+    console.log('[FA] room effect, roomId:', roomId);
     if (!roomId) {
       setSyncStatus('disconnected');
       // Remove room from URL
@@ -904,6 +908,7 @@ export default function FlatOfferAnalyzer() {
     window.history.replaceState({}, '', url);
 
     const unsub = subscribeToRoom(roomId, (data) => {
+      console.log('[FA] firebase data received:', data ? Object.keys(data) : 'null', 'offers:', data?.offers ? (Array.isArray(data.offers) ? data.offers.length : Object.keys(data.offers).length) : 0);
       remoteUpdateRef.current = true;
       if (data.offers) {
         // Firebase may return arrays as objects with numeric keys
@@ -927,8 +932,10 @@ export default function FlatOfferAnalyzer() {
       setTimeout(() => { remoteUpdateRef.current = false; }, 300);
     });
 
-    // Push current data to Firebase (for new rooms)
-    writeRoom(roomId, offers, parameterRanges, palette);
+    // Push current data to Firebase only if we have local data (new room creation)
+    if (offers.length > 0) {
+      writeRoom(roomId, offers, parameterRanges, palette);
+    }
 
     return unsub;
   }, [roomId]);

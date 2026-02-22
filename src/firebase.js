@@ -9,20 +9,13 @@ import { getDatabase, ref, set, onValue } from 'firebase/database';
 // ============================================================================
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAHEPrKyle1xNRXRBetDV0whgGTW-7_LlQ",
-
-  authDomain: "flat-analyzer-memory.firebaseapp.com",
-
-  databaseURL: "https://flat-analyzer-memory-default-rtdb.europe-west1.firebasedatabase.app",          // ← REQUIRED: e.g. "https://your-project-default-rtdb.europe-west1.firebasedatabase.app"
-
-  projectId: "flat-analyzer-memory",
-
-  storageBucket: "flat-analyzer-memory.firebasestorage.app",
-
-  messagingSenderId: "424420313683",
-
-  appId: "1:424420313683:web:7b1193b612bd61839894a6",
-
+  apiKey: "",
+  authDomain: "",
+  databaseURL: "",          // ← REQUIRED: e.g. "https://your-project-default-rtdb.europe-west1.firebasedatabase.app"
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
 };
 
 // ============================================================================
@@ -35,6 +28,7 @@ export const isConfigured = () => !!firebaseConfig.apiKey && !!firebaseConfig.da
 
 export function initFirebase() {
   if (db) return db;
+  console.log('[FB] isConfigured:', isConfigured(), 'apiKey:', !!firebaseConfig.apiKey, 'dbURL:', !!firebaseConfig.databaseURL);
   if (!isConfigured()) return null;
   try {
     const app = initializeApp(firebaseConfig);
@@ -93,10 +87,12 @@ export function writeRoom(roomId, offers, parameterRanges, palette = null) {
 }
 
 export function subscribeToRoom(roomId, callback) {
+  console.log('[FB] subscribeToRoom:', roomId, 'db:', !!db);
   if (!db || !roomId) return () => {};
   const roomRef = ref(db, `rooms/${roomId}`);
   return onValue(roomRef, (snapshot) => {
     const data = snapshot.val();
+    console.log('[FB] onValue:', data ? 'has data' : 'null');
     if (data) callback(restoreKeys(data));
   }, (error) => {
     console.error('Firebase subscribe error:', error);
