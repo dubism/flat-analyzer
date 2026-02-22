@@ -906,13 +906,20 @@ export default function FlatOfferAnalyzer() {
     const unsub = subscribeToRoom(roomId, (data) => {
       remoteUpdateRef.current = true;
       if (data.offers) {
-        setOffers(data.offers.map(o => ({
+        // Firebase may return arrays as objects with numeric keys
+        const offersArr = Array.isArray(data.offers) ? data.offers : Object.values(data.offers);
+        setOffers(offersArr.filter(Boolean).map(o => ({
           ...o,
           subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
         })));
       }
       if (data.meta?.parameterRanges) {
-        setParameterRanges({ ...DEFAULT_PARAM_RANGES, ...data.meta.parameterRanges });
+        const RANGE_MIGRATION = { 'Price': 'Low price', 'Price per m²': 'Low price per m²', 'Size': 'Interior area' };
+        const migrated = {};
+        for (const [k, v] of Object.entries(data.meta.parameterRanges)) {
+          migrated[RANGE_MIGRATION[k] || k] = v;
+        }
+        setParameterRanges({ ...DEFAULT_PARAM_RANGES, ...migrated });
       }
       if (data.meta?.palette) {
         setPalette(data.meta.palette);
