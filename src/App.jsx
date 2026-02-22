@@ -5,6 +5,8 @@ import {
   generatePalette,
   OBJECTIVE_PARAMS,
   SUBJECTIVE_PARAMS,
+  ALL_PARAMS,
+  DEFAULT_ENABLED_PARAMS,
   DEFAULT_PARAM_RANGES,
 } from './config';
 import {
@@ -125,7 +127,18 @@ function DeleteConfirmModal({ offerName, onConfirm, onCancel }) {
   );
 }
 
-const CustomTooltip = ({ active, payload, label, starredOffers, activeTab }) => {
+const FIELD_LABELS = { PRICE: 'Price', SIZE: 'Interior area', ROOMS: 'Rooms', FLOOR: 'Floor', ADDRESS: 'Address', LOCATION: 'Location', BALCONY: 'Balcony/Loggia', CELLAR: 'Cellar', PARKING: 'Parking', BUILDING: 'Building', ENERGY: 'Energy' };
+const formatFieldValue = (k, v) => {
+  if (!v) return '';
+  if (k === 'PRICE') return formatPrice(parsePrice(v));
+  if (k === 'SIZE' || k === 'BALCONY' || k === 'CELLAR') {
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+    return (!isNaN(n) && n > 0) ? n + ' m²' : String(v);
+  }
+  return String(v);
+};
+
+const CustomTooltip = ({ active, payload, label, starredOffers }) => {
   if (!active || !payload?.length) return null;
   const param = label;
   const sortedPayload = [...payload].sort((a, b) => (b.value || 0) - (a.value || 0));
@@ -404,12 +417,12 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
 
   const OBJECTIVE_FIELDS = [
     { key: 'PRICE', label: 'Price', unit: 'Kč' },
-    { key: 'SIZE', label: 'Size', unit: 'm²' },
+    { key: 'SIZE', label: 'Interior area', unit: 'm²' },
     { key: 'ROOMS', label: 'Rooms' },
     { key: 'FLOOR', label: 'Floor' },
     { key: 'ADDRESS', label: 'Address' },
     { key: 'LOCATION', label: 'Location' },
-    { key: 'BALCONY', label: 'Balcony', unit: 'm²' },
+    { key: 'BALCONY', label: 'Balcony/Loggia', unit: 'm²' },
     { key: 'CELLAR', label: 'Cellar', unit: 'm²' },
     { key: 'PARKING', label: 'Parking' },
     { key: 'BUILDING', label: 'Building' },
@@ -620,7 +633,7 @@ function EditOfferModal({ offer, onClose, onSave, palette }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className={labelClass}>Price</label><input value={formData.PRICE || ''} onChange={(e) => setFormData(p => ({ ...p, PRICE: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Size</label><input value={formData.SIZE || ''} onChange={(e) => setFormData(p => ({ ...p, SIZE: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>Interior area</label><input value={formData.SIZE || ''} onChange={(e) => setFormData(p => ({ ...p, SIZE: e.target.value }))} className={inputClass} /></div>
             <div><label className={labelClass}>Rooms</label><input value={formData.ROOMS || ''} onChange={(e) => setFormData(p => ({ ...p, ROOMS: e.target.value }))} className={inputClass} /></div>
             <div><label className={labelClass}>Floor</label><input value={formData.FLOOR || ''} onChange={(e) => setFormData(p => ({ ...p, FLOOR: e.target.value }))} className={inputClass} /></div>
             <div><label className={labelClass}>Balcony</label><input value={formData.BALCONY || ''} onChange={(e) => setFormData(p => ({ ...p, BALCONY: e.target.value }))} className={inputClass} /></div>
@@ -788,8 +801,7 @@ export default function FlatOfferAnalyzer() {
   const [parameterRanges, setParameterRanges] = useState(DEFAULT_PARAM_RANGES);
   const [currentOfferId, setCurrentOfferId] = useState(null);
   const [hoveredOfferId, setHoveredOfferId] = useState(null);
-  const [activeTab, setActiveTab] = useState('objective');
-  const [sortCriterion, setSortCriterion] = useState('manual');
+  const [sortCriterion, setSortCriterion] = useState('graphScore');
   const [groupCriterion, setGroupCriterion] = useState('none');
   const [modal, setModal] = useState(null);
   const [editingOffer, setEditingOffer] = useState(null);
@@ -801,14 +813,13 @@ export default function FlatOfferAnalyzer() {
   const [draggedId, setDraggedId] = useState(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [pendingImport, setPendingImport] = useState(null);
-  const [enabledObjective, setEnabledObjective] = useState(Object.fromEntries(OBJECTIVE_PARAMS.map(p => [p, true])));
-  const [enabledSubjective, setEnabledSubjective] = useState(Object.fromEntries(SUBJECTIVE_PARAMS.map(p => [p, true])));
+  const [enabledParams, setEnabledParams] = useState(DEFAULT_ENABLED_PARAMS);
   const [palette, setPalette] = useState([...DEFAULT_PALETTE]);
   const fileInputRef = useRef(null);
   
   // Resizable panels
-  const [listWidth, setListWidth] = useState(256);
-  const [detailWidth, setDetailWidth] = useState(256);
+  const [listWidth, setListWidth] = useState(400);
+  const [detailWidth, setDetailWidth] = useState(400);
   const [isResizingList, setIsResizingList] = useState(false);
   const [isResizingDetail, setIsResizingDetail] = useState(false);
   const containerRef = useRef(null);
@@ -956,18 +967,16 @@ export default function FlatOfferAnalyzer() {
   const starredOffers = useMemo(() => offers.filter(o => o.featured && (showSoldInGraph || !o.sold)), [offers, showSoldInGraph]);
 
   const chartData = useMemo(() => {
-    const params = activeTab === 'objective' ? OBJECTIVE_PARAMS : SUBJECTIVE_PARAMS;
-    const enabled = activeTab === 'objective' ? enabledObjective : enabledSubjective;
-    return params.filter(p => enabled[p]).map(param => {
+    return ALL_PARAMS.filter(p => enabledParams[p]).map(param => {
       const point = { param };
       starredOffers.forEach(offer => {
-        point[offer.id] = activeTab === 'objective'
+        point[offer.id] = OBJECTIVE_PARAMS.includes(param)
           ? getNormalizedValue(param, offer, parameterRanges)
           : (offer.subjectiveRatings?.[param] ?? 5);
       });
       return point;
     });
-  }, [starredOffers, activeTab, enabledObjective, enabledSubjective, parameterRanges]);
+  }, [starredOffers, enabledParams, parameterRanges]);
 
   const processedOffers = useMemo(() => {
     const activeOffers = offers.filter(o => !o.sold);
@@ -983,6 +992,14 @@ export default function FlatOfferAnalyzer() {
         return aR - bR;
       });
     } else if (sortCriterion === 'name') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    else if (sortCriterion === 'graphScore') {
+      const getScore = (offer) => ALL_PARAMS.filter(p => enabledParams[p]).reduce((sum, param) => {
+        return sum + (OBJECTIVE_PARAMS.includes(param)
+          ? getNormalizedValue(param, offer, parameterRanges)
+          : (offer.subjectiveRatings?.[param] ?? 5));
+      }, 0);
+      sorted.sort((a, b) => getScore(b) - getScore(a));
+    }
     else sorted.sort((a, b) => (a.manualOrder || 0) - (b.manualOrder || 0));
 
     let groups = [];
@@ -1002,14 +1019,14 @@ export default function FlatOfferAnalyzer() {
       groups.push({ key: 'sold', label: 'Sold', offers: soldOffers, isSold: true });
     }
     return groups;
-  }, [offers, sortCriterion, groupCriterion]);
+  }, [offers, sortCriterion, groupCriterion, enabledParams, parameterRanges]);
 
   // Actions
   const addOffer = useCallback((data) => {
     const newOffer = {
       id: generateId(),
       name: data.name,
-      color: data.color || getNextColor(offers),
+      color: data.color || getNextColor(offers, palette),
       data: data.data,
       subjectiveRatings: data.subjectiveRatings || calculateSubjectiveRatings(data.data),
       notes: '',
@@ -1021,7 +1038,7 @@ export default function FlatOfferAnalyzer() {
     setOffers(prev => [...prev, newOffer]);
     setCurrentOfferId(newOffer.id);
     setModal(null);
-  }, [offers]);
+  }, [offers, palette]);
 
   const updateOffer = useCallback((id, updates) => {
     setOffers(prev => prev.map(o => o.id === id ? { ...o, ...updates } : o));
@@ -1050,18 +1067,8 @@ export default function FlatOfferAnalyzer() {
       newOffers.splice(toIndex, 0, moved);
       return newOffers.map((o, i) => ({ ...o, manualOrder: i }));
     });
-  }, []);
-
-  const sortByChartArea = useCallback((type) => {
-    const params = type === 'objective' ? OBJECTIVE_PARAMS : SUBJECTIVE_PARAMS;
-    const enabled = type === 'objective' ? enabledObjective : enabledSubjective;
-    const getArea = (offer) => params.filter(p => enabled[p]).reduce((sum, param) => {
-      return sum + (type === 'objective' ? getNormalizedValue(param, offer, parameterRanges) : (offer.subjectiveRatings?.[param] ?? 5));
-    }, 0);
-    const sortedOffers = [...offers].sort((a, b) => getArea(b) - getArea(a));
-    setOffers(sortedOffers.map((o, i) => ({ ...o, manualOrder: i })));
     setSortCriterion('manual');
-  }, [offers, enabledObjective, enabledSubjective, parameterRanges]);
+  }, []);
 
   const loadDemoData = useCallback(() => {
     const demo = loadDemoOffers();
@@ -1077,9 +1084,9 @@ export default function FlatOfferAnalyzer() {
       const range = parameterRanges[param];
       if (range?.type === 'discrete') return;
       const vals = activeOffers.map(o => {
-        if (param === 'Price') return parsePrice(o.data?.PRICE) || 0;
-        if (param === 'Price per m²') { const p = parsePrice(o.data?.PRICE); const s = parseSize(o.data?.SIZE); return (p && s) ? p / s : 0; }
-        if (param === 'Size') return parseSize(o.data?.SIZE) || 0;
+        if (param === 'Low price') return parsePrice(o.data?.PRICE) || 0;
+        if (param === 'Low price per m²') { const p = parsePrice(o.data?.PRICE); const s = parseSize(o.data?.SIZE); return (p && s) ? p / s : 0; }
+        if (param === 'Interior area') return parseSize(o.data?.SIZE) || 0;
         if (param === 'Rooms') { const m = String(o.data?.ROOMS || '').match(/(\d+)/); return m ? parseInt(m[1], 10) : 0; }
         if (param === 'Cellar') { const c = o.data?.CELLAR; if (c == null) return 0; if (typeof c === 'number') return c; const s = String(c); if (s.toLowerCase() === 'no' || s.toLowerCase() === 'none') return 0; const m = s.match(/(\d+([.,]\d+)?)/); return m ? parseFloat(m[1].replace(',', '.')) : 0; }
         if (param === 'Balcony/Loggia') { const b = o.data?.BALCONY; if (b == null) return 0; if (typeof b === 'number') return b; const s = String(b); if (s.toLowerCase() === 'no' || s.toLowerCase() === 'none') return 0; const m = s.match(/(\d+([.,]\d+)?)/); return m ? parseFloat(m[1].replace(',', '.')) : 0; }
@@ -1154,13 +1161,13 @@ export default function FlatOfferAnalyzer() {
       const newOffers = pendingImport.offers.map(o => ({
         ...o,
         id: generateId(),
-        color: getNextColor([...offers, ...pendingImport.offers.slice(0, pendingImport.offers.indexOf(o))]),
+        color: getNextColor([...offers, ...pendingImport.offers.slice(0, pendingImport.offers.indexOf(o))], palette),
         manualOrder: offers.length + pendingImport.offers.indexOf(o)
       }));
       setOffers(prev => [...prev, ...newOffers]);
     }
     setPendingImport(null);
-  }, [pendingImport, offers]);
+  }, [pendingImport, offers, palette]);
 
   // File drag & drop handlers
   const handleFileDragOver = useCallback((e) => {
@@ -1337,9 +1344,6 @@ export default function FlatOfferAnalyzer() {
           <div className="flex items-center gap-1">
             {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded text-xs">Demo</button>}
             {renderSyncButton()}
-            <button onClick={() => setModal('palette')} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg" title="Colors">
-              <div className="w-3.5 h-3.5 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
-            </button>
             <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg font-medium text-xs">+ Add</button>
           </div>
         </header>
@@ -1349,14 +1353,16 @@ export default function FlatOfferAnalyzer() {
           {/* LIST VIEW */}
           {mobileView === 'list' && (
             <div className="h-full flex flex-col">
-              <div className="p-2 bg-white border-b border-gray-200 flex gap-1">
-                <select value={sortCriterion} onChange={(e) => { const v = e.target.value; if (v === 'chartObj') sortByChartArea('objective'); else if (v === 'chartSubj') sortByChartArea('subjective'); else setSortCriterion(v); }} className="flex-1 text-xs border border-gray-300 rounded px-1 py-1.5 bg-white">
-                  <optgroup label="Sort"><option value="manual">Manual</option><option value="price">Price</option><option value="size">Size</option><option value="pricePerSqm">Kč/m²</option><option value="name">Name</option></optgroup>
-                  <optgroup label="By score"><option value="chartObj">Objective</option><option value="chartSubj">Subjective</option></optgroup>
+              <div className="p-2 bg-white border-b border-gray-200 flex gap-1 items-center">
+                <select value={sortCriterion} onChange={(e) => setSortCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-1.5 bg-white">
+                  <optgroup label="Sort"><option value="graphScore">Graph score</option><option value="manual">Manual</option><option value="price">Price</option><option value="size">Interior area</option><option value="pricePerSqm">Kč/m²</option><option value="name">Name</option></optgroup>
                 </select>
                 <select value={groupCriterion} onChange={(e) => setGroupCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-1.5 bg-white">
-                  <option value="none">No group</option><option value="location">Location</option><option value="renovation">Reno</option>
+                  <optgroup label="Grouping"><option value="none">None</option><option value="location">Location</option><option value="renovation">Reno</option></optgroup>
                 </select>
+                <button onClick={() => setModal('palette')} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg flex-shrink-0" title="Colors">
+                  <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
+                </button>
               </div>
               <div className="flex-grow overflow-y-auto p-2 space-y-1">
                 {offers.length === 0 ? (
@@ -1402,8 +1408,8 @@ export default function FlatOfferAnalyzer() {
                   <div className="space-y-1.5 text-sm mb-4">
                     {['PRICE', 'SIZE', 'ROOMS', 'FLOOR', 'ADDRESS', 'LOCATION', 'BALCONY', 'CELLAR', 'PARKING', 'BUILDING', 'ENERGY'].map(k => currentOffer.data?.[k] && (
                       <div key={k} className="flex justify-between">
-                        <span className="text-gray-500">{k}</span>
-                        <span className="font-medium truncate ml-2">{k === 'PRICE' ? formatPrice(parsePrice(currentOffer.data[k])) : String(currentOffer.data[k])}</span>
+                        <span className="text-gray-500">{FIELD_LABELS[k] || k}</span>
+                        <span className="font-medium truncate ml-2">{formatFieldValue(k, currentOffer.data[k])}</span>
                       </div>
                     ))}
                   </div>
@@ -1427,20 +1433,18 @@ export default function FlatOfferAnalyzer() {
                     className="w-full p-3 text-sm border border-gray-300 rounded-lg resize-none h-20 mb-4"
                   />
 
-                  {activeTab === 'subjective' && (
-                    <div className="border-t pt-3">
-                      <h3 className="text-xs font-medium text-gray-700 mb-2">Ratings</h3>
-                      {SUBJECTIVE_PARAMS.map(param => (
-                        <div key={param} className="mb-3">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span>{param}</span>
-                            <span className="font-medium">{currentOffer.subjectiveRatings?.[param] ?? 5}</span>
-                          </div>
-                          <input type="range" min="0" max="10" step="0.5" value={currentOffer.subjectiveRatings?.[param] ?? 5} onChange={(e) => updateOffer(currentOffer.id, { subjectiveRatings: { ...currentOffer.subjectiveRatings, [param]: parseFloat(e.target.value) } })} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" />
+                  <div className="border-t pt-3">
+                    <h3 className="text-xs font-medium text-gray-700 mb-2">Ratings</h3>
+                    {SUBJECTIVE_PARAMS.map(param => (
+                      <div key={param} className="mb-3">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span>{param}</span>
+                          <span className="font-medium">{currentOffer.subjectiveRatings?.[param] ?? 5}</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <input type="range" min="0" max="10" step="0.5" value={currentOffer.subjectiveRatings?.[param] ?? 5} onChange={(e) => updateOffer(currentOffer.id, { subjectiveRatings: { ...currentOffer.subjectiveRatings, [param]: parseFloat(e.target.value) } })} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 p-8">
@@ -1456,15 +1460,9 @@ export default function FlatOfferAnalyzer() {
             <div className="h-full flex flex-col bg-white">
               <div className="flex items-center justify-between p-2 border-b border-gray-200">
                 <div className="flex gap-1">
-                  <button onClick={() => setActiveTab('objective')} className={`px-3 py-1.5 rounded-lg font-medium text-xs ${activeTab === 'objective' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>Objective</button>
-                  <button onClick={() => setActiveTab('subjective')} className={`px-3 py-1.5 rounded-lg font-medium text-xs ${activeTab === 'subjective' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>Subjective</button>
+                  <button onClick={autoRanges} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">Auto</button>
+                  <button onClick={() => setShowRangePopup(!showRangePopup)} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">Ranges</button>
                 </div>
-                {activeTab === 'objective' && (
-                  <div className="flex gap-1">
-                    <button onClick={autoRanges} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">Auto</button>
-                    <button onClick={() => setShowRangePopup(!showRangePopup)} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">Ranges</button>
-                  </div>
-                )}
               </div>
 
               <div className="flex-grow relative">
@@ -1476,10 +1474,21 @@ export default function FlatOfferAnalyzer() {
                       <PolarGrid stroke="#E5E7EB" />
                       <PolarAngleAxis dataKey="param" tick={{ fill: '#6B7280', fontSize: 9 }} />
                       <PolarRadiusAxis angle={90} domain={[0, 10]} tick={{ fill: '#9CA3AF', fontSize: 8 }} />
-                      {starredOffers.map(offer => (
-                        <Radar key={offer.id} name={offer.name} dataKey={offer.id} stroke={offer.color} fill={offer.color} fillOpacity={0.15} strokeWidth={2} isAnimationActive={false} />
-                      ))}
-                      <Tooltip content={<CustomTooltip starredOffers={starredOffers} activeTab={activeTab} />} />
+                      {starredOffers.map(offer => {
+                        const isHighlighted = offer.id === hoveredOfferId || offer.id === currentOfferId;
+                        const isDimmed = (hoveredOfferId || currentOfferId) && !isHighlighted;
+                        const noSelection = !hoveredOfferId && !currentOfferId;
+                        return (
+                          <Radar key={offer.id} name={offer.name} dataKey={offer.id} stroke={offer.color}
+                            fill={offer.color}
+                            fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.03 : noSelection ? 0.08 : 0.15}
+                            strokeOpacity={isDimmed ? 0.3 : 1}
+                            strokeWidth={isHighlighted ? 3 : noSelection ? 2.5 : 2}
+                            isAnimationActive={false}
+                          />
+                        );
+                      })}
+                      <Tooltip content={<CustomTooltip starredOffers={starredOffers} />} />
                     </RadarChart>
                   </ResponsiveContainer>
                 )}
@@ -1518,15 +1527,11 @@ export default function FlatOfferAnalyzer() {
 
               <div className="p-2 border-t border-gray-200 bg-gray-50">
                 <div className="flex flex-wrap gap-1">
-                  {(activeTab === 'objective' ? OBJECTIVE_PARAMS : SUBJECTIVE_PARAMS).map(param => {
-                    const enabled = activeTab === 'objective' ? enabledObjective[param] : enabledSubjective[param];
-                    const toggle = activeTab === 'objective' ? setEnabledObjective : setEnabledSubjective;
-                    return (
-                      <button key={param} onClick={() => toggle(prev => ({ ...prev, [param]: !prev[param] }))} className={`px-2 py-1 rounded text-[10px] ${enabled ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-white text-gray-500 border border-gray-300'}`}>
-                        {param}
-                      </button>
-                    );
-                  })}
+                  {ALL_PARAMS.map(param => (
+                    <button key={param} onClick={() => setEnabledParams(prev => ({ ...prev, [param]: !prev[param] }))} className={`px-2 py-1 rounded text-[10px] ${enabledParams[param] ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-white text-gray-500 border border-gray-300'}`}>
+                      {param}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1632,9 +1637,6 @@ export default function FlatOfferAnalyzer() {
           {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg text-xs">Demo</button>}
           <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">+ Add</button>
           {renderSyncButton()}
-          <button onClick={() => setModal('palette')} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Color palette">
-            <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
-          </button>
           <button onClick={() => fileInputRef.current?.click()} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Import">↑</button>
           <input ref={fileInputRef} type="file" accept=".json" onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])} className="hidden" />
           <button onClick={exportData} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Export">↓</button>
@@ -1646,34 +1648,30 @@ export default function FlatOfferAnalyzer() {
         {/* Left: List */}
         <div style={{ width: listWidth }} className="bg-white rounded-lg shadow-sm flex flex-col flex-shrink-0">
           <div className="p-1.5 border-b border-gray-200 bg-gray-50">
-            <div className="flex gap-1">
+            <div className="flex gap-1 items-center">
               <select
                 value={sortCriterion}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === 'chartObj') sortByChartArea('objective');
-                  else if (val === 'chartSubj') sortByChartArea('subjective');
-                  else setSortCriterion(val);
-                }}
+                onChange={(e) => setSortCriterion(e.target.value)}
                 className="flex-1 text-xs border border-gray-300 rounded px-1 py-1 bg-white"
               >
                 <optgroup label="Sort">
+                  <option value="graphScore">Graph score</option>
                   <option value="manual">Manual</option>
                   <option value="price">Price</option>
-                  <option value="size">Size</option>
+                  <option value="size">Interior area</option>
                   <option value="pricePerSqm">Kč/m²</option>
                   <option value="name">Name</option>
                 </optgroup>
-                <optgroup label="By score">
-                  <option value="chartObj">Objective</option>
-                  <option value="chartSubj">Subjective</option>
-                </optgroup>
               </select>
               <select value={groupCriterion} onChange={(e) => setGroupCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-1 bg-white">
-                <option value="none">No group</option>
+                <optgroup label="Grouping"><option value="none">None</option>
                 <option value="location">Location</option>
                 <option value="renovation">Reno</option>
+                </optgroup>
               </select>
+              <button onClick={() => setModal('palette')} className="p-1 text-gray-500 hover:bg-gray-100 rounded flex-shrink-0" title="Colors">
+                <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
+              </button>
             </div>
           </div>
           <div className="flex-grow overflow-y-auto p-1" onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }}>
@@ -1747,8 +1745,8 @@ export default function FlatOfferAnalyzer() {
                 <div className="space-y-1 text-sm">
                   {['PRICE', 'SIZE', 'ROOMS', 'FLOOR', 'ADDRESS', 'LOCATION', 'BALCONY', 'CELLAR', 'PARKING', 'BUILDING', 'ENERGY'].map(k => currentOffer.data?.[k] && (
                     <div key={k} className="flex justify-between">
-                      <span className="text-gray-500">{k}</span>
-                      <span className="font-medium truncate ml-2">{k === 'PRICE' ? formatPrice(parsePrice(currentOffer.data[k])) : currentOffer.data[k]}</span>
+                      <span className="text-gray-500">{FIELD_LABELS[k] || k}</span>
+                      <span className="font-medium truncate ml-2">{formatFieldValue(k, currentOffer.data[k])}</span>
                     </div>
                   ))}
                 </div>
@@ -1782,28 +1780,26 @@ export default function FlatOfferAnalyzer() {
                   />
                 </div>
 
-                {activeTab === 'subjective' && (
-                  <div className="mt-3 border-t pt-3">
-                    <h3 className="text-xs font-medium text-gray-700 mb-2">Ratings</h3>
-                    {SUBJECTIVE_PARAMS.map(param => (
-                      <div key={param} className="mb-2">
-                        <div className="flex justify-between text-xs mb-0.5">
-                          <span>{param}</span>
-                          <span className="font-medium">{currentOffer.subjectiveRatings?.[param] ?? 5}</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="10"
-                          step="0.5"
-                          value={currentOffer.subjectiveRatings?.[param] ?? 5}
-                          onChange={(e) => updateOffer(currentOffer.id, { subjectiveRatings: { ...currentOffer.subjectiveRatings, [param]: parseFloat(e.target.value) } })}
-                          className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                        />
+                <div className="mt-3 border-t pt-3">
+                  <h3 className="text-xs font-medium text-gray-700 mb-2">Ratings</h3>
+                  {SUBJECTIVE_PARAMS.map(param => (
+                    <div key={param} className="mb-2">
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span>{param}</span>
+                        <span className="font-medium">{currentOffer.subjectiveRatings?.[param] ?? 5}</span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={currentOffer.subjectiveRatings?.[param] ?? 5}
+                        onChange={(e) => updateOffer(currentOffer.id, { subjectiveRatings: { ...currentOffer.subjectiveRatings, [param]: parseFloat(e.target.value) } })}
+                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           ) : (
@@ -1819,17 +1815,11 @@ export default function FlatOfferAnalyzer() {
 
         {/* Right: Chart */}
         <div className="flex-grow bg-white rounded-lg shadow-sm flex flex-col min-w-0">
-          <div className="flex items-center justify-between p-2 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-end p-2 border-b border-gray-200 bg-gray-50">
             <div className="flex gap-1">
-              <button onClick={() => setActiveTab('objective')} className={`px-3 py-1.5 rounded-lg font-medium text-sm ${activeTab === 'objective' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-300'}`}>Objective</button>
-              <button onClick={() => setActiveTab('subjective')} className={`px-3 py-1.5 rounded-lg font-medium text-sm ${activeTab === 'subjective' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-300'}`}>Subjective</button>
+              <button onClick={autoRanges} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded-lg border border-gray-300" title="Fit ranges to starred offers">Auto</button>
+              <button onClick={() => setShowRangePopup(!showRangePopup)} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded-lg border border-gray-300">Ranges</button>
             </div>
-            {activeTab === 'objective' && (
-              <div className="flex gap-1">
-                <button onClick={autoRanges} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded-lg border border-gray-300" title="Fit ranges to starred offers">Auto</button>
-                <button onClick={() => setShowRangePopup(!showRangePopup)} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded-lg border border-gray-300">Ranges</button>
-              </div>
-            )}
           </div>
 
           <div className="flex-grow relative" onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }}>
@@ -1846,6 +1836,7 @@ export default function FlatOfferAnalyzer() {
                       {starredOffers.map(offer => {
                         const isHighlighted = offer.id === hoveredOfferId || offer.id === currentOfferId;
                         const isDimmed = (hoveredOfferId || currentOfferId) && !isHighlighted;
+                        const noSelection = !hoveredOfferId && !currentOfferId;
                         return (
                           <Radar
                             key={offer.id}
@@ -1853,14 +1844,14 @@ export default function FlatOfferAnalyzer() {
                             dataKey={offer.id}
                             stroke={offer.color}
                             fill={offer.color}
-                            fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.05 : 0.15}
+                            fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.03 : noSelection ? 0.08 : 0.15}
                             strokeOpacity={isDimmed ? 0.3 : 1}
-                            strokeWidth={isHighlighted ? 3 : 2}
+                            strokeWidth={isHighlighted ? 3 : noSelection ? 2.5 : 2}
                             isAnimationActive={false}
                           />
                         );
                       })}
-                      <Tooltip content={<CustomTooltip starredOffers={starredOffers} activeTab={activeTab} />} />
+                      <Tooltip content={<CustomTooltip starredOffers={starredOffers} />} />
                     </RadarChart>
                   </ResponsiveContainer>
                 </ZoomableChart>
@@ -1907,19 +1898,15 @@ export default function FlatOfferAnalyzer() {
 
           <div className="p-2 border-t border-gray-200 bg-gray-50">
             <div className="flex flex-wrap gap-1">
-              {(activeTab === 'objective' ? OBJECTIVE_PARAMS : SUBJECTIVE_PARAMS).map(param => {
-                const enabled = activeTab === 'objective' ? enabledObjective[param] : enabledSubjective[param];
-                const toggle = activeTab === 'objective' ? setEnabledObjective : setEnabledSubjective;
-                return (
-                  <button
-                    key={param}
-                    onClick={() => toggle(prev => ({ ...prev, [param]: !prev[param] }))}
-                    className={`px-2 py-1 rounded text-xs ${enabled ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-white text-gray-500 border border-gray-300'}`}
-                  >
-                    {param}
-                  </button>
-                );
-              })}
+              {ALL_PARAMS.map(param => (
+                <button
+                  key={param}
+                  onClick={() => setEnabledParams(prev => ({ ...prev, [param]: !prev[param] }))}
+                  className={`px-2 py-1 rounded text-xs ${enabledParams[param] ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-white text-gray-500 border border-gray-300'}`}
+                >
+                  {param}
+                </button>
+              ))}
             </div>
           </div>
         </div>

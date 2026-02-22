@@ -3,6 +3,7 @@ import {
   DEFAULT_PALETTE,
   OBJECTIVE_PARAMS,
   SUBJECTIVE_PARAMS,
+  ALL_PARAMS,
   DEFAULT_PARAM_RANGES,
   DEFAULT_SUBJECTIVE,
   LEGACY_SUBJECTIVE_MAP,
@@ -62,13 +63,13 @@ export const getNormalizedValue = (param, offer, parameterRanges) => {
   if (!range) return 5;
 
   let rawValue = 0;
-  if (param === 'Price') {
+  if (param === 'Low price') {
     rawValue = parsePrice(offer.data?.PRICE) || 0;
-  } else if (param === 'Price per m²') {
+  } else if (param === 'Low price per m²') {
     const price = parsePrice(offer.data?.PRICE);
     const size = parseSize(offer.data?.SIZE);
     rawValue = (price && size) ? price / size : 0;
-  } else if (param === 'Size') {
+  } else if (param === 'Interior area') {
     rawValue = parseSize(offer.data?.SIZE) || 0;
   } else if (param === 'Rooms') {
     const roomsStr = String(offer.data?.ROOMS || '');
@@ -101,13 +102,13 @@ export const getNormalizedValue = (param, offer, parameterRanges) => {
 };
 
 export const getRawValue = (param, offer) => {
-  if (param === 'Price') return formatPrice(parsePrice(offer.data?.PRICE));
-  if (param === 'Price per m²') {
+  if (param === 'Low price') return formatPrice(parsePrice(offer.data?.PRICE));
+  if (param === 'Low price per m²') {
     const price = parsePrice(offer.data?.PRICE);
     const size = parseSize(offer.data?.SIZE);
     return (price && size) ? formatPrice(Math.round(price / size)) + '/m²' : 'N/A';
   }
-  if (param === 'Size') { const v = offer.data?.SIZE; return v ? (typeof v === 'number' ? v + ' m²' : v) : 'N/A'; }
+  if (param === 'Interior area') { const v = offer.data?.SIZE; return v ? (typeof v === 'number' ? v + ' m²' : v) : 'N/A'; }
   if (param === 'Rooms') return offer.data?.ROOMS || 'N/A';
   if (param === 'Parking') return offer.data?.PARKING || 'None';
   if (param === 'Cellar') { const v = offer.data?.CELLAR; return v != null ? String(v) : 'None'; }
@@ -198,14 +199,45 @@ export function parseListingTextWithSources(text) {
     if (match) { recordMatch('FLOOR', match[2] ? `${match[1]}/${match[2]}` : match[1], match); break; }
   }
 
-  // Balcony
-  const balconyMatch = cleaned.match(/(?:balkon|balkón|lodžie|terasa)[:\s]*([0-9]+(?:[.,][0-9]+)?)\s*m/i);
-  if (balconyMatch) recordMatch('BALCONY', parseFloat(balconyMatch[1].replace(',', '.')), balconyMatch);
+  // Balcony / Loggia / Terasa
+  const balconyPatterns = [
+    // "Balkón: 4,5 m²" or "Lodžie 5.3 m²" — number with m²
+    /(?:balkon|balkón|lodžie|lodži[eí]|loggie|terasa)\s*:?\s*(\d+(?:[.,]\d+)?)\s*m/i,
+    // "Balkón Ano" / "Lodžie: Ano" — boolean (record as 1)
+    /(?:balkon|balkón|lodžie|lodži[eí]|loggie|terasa)\s*:?\s*ano/i,
+    // number on a nearby line: "Balkón\n4,5 m²" — looser match
+    /(?:balkon|balkón|lodžie|lodži[eí]|loggie|terasa)[^0-9]{0,20}(\d+(?:[.,]\d+)?)\s*m²/i,
+  ];
+  for (const pat of balconyPatterns) {
+    const m = cleaned.match(pat);
+    if (m) {
+      if (m[1]) {
+        recordMatch('BALCONY', parseFloat(m[1].replace(',', '.')), m);
+      } else {
+        recordMatch('BALCONY', 1, m); // "Ano" = boolean yes
+      }
+      break;
+    }
+  }
 
-  // Cellar
-  const cellarMatch = cleaned.match(/sklep[:\s]*([0-9]+(?:[.,][0-9]+)?)\s*m/i);
-  if (cellarMatch) recordMatch('CELLAR', parseFloat(cellarMatch[1].replace(',', '.')), cellarMatch);
-  else { const cellarYes = cleaned.match(/sklep[:\s]*ano/i); if (cellarYes) recordMatch('CELLAR', 1, cellarYes); }
+  // Cellar / Sklep
+  const cellarPatterns = [
+    // "Sklep: 4 m²" or "Sklepní kóje: 3,5 m²"
+    /(?:sklep|sklepn)[^0-9]{0,20}(\d+(?:[.,]\d+)?)\s*m/i,
+    // "Sklep: Ano"
+    /(?:sklep|sklepn)\w*\s*:?\s*ano/i,
+  ];
+  for (const pat of cellarPatterns) {
+    const m = cleaned.match(pat);
+    if (m) {
+      if (m[1]) {
+        recordMatch('CELLAR', parseFloat(m[1].replace(',', '.')), m);
+      } else {
+        recordMatch('CELLAR', 1, m);
+      }
+      break;
+    }
+  }
 
   // Parking
   const garageMatch = cleaned.match(/garáž|garage/i);
@@ -384,12 +416,19 @@ export const loadFromStorage = () => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      // Migrate old param range keys
+      const storedRanges = parsed.meta?.parameterRanges || {};
+      const RANGE_MIGRATION = { 'Price': 'Low price', 'Price per m²': 'Low price per m²', 'Size': 'Interior area' };
+      const migratedRanges = {};
+      for (const [k, v] of Object.entries(storedRanges)) {
+        migratedRanges[RANGE_MIGRATION[k] || k] = v;
+      }
       return {
         offers: (parsed.offers || []).map(o => ({
           ...o,
           subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
         })),
-        parameterRanges: { ...DEFAULT_PARAM_RANGES, ...parsed.meta?.parameterRanges },
+        parameterRanges: { ...DEFAULT_PARAM_RANGES, ...migratedRanges },
         palette: parsed.meta?.palette || null,
       };
     }
