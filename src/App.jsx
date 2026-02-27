@@ -1353,7 +1353,7 @@ export default function FlatOfferAnalyzer() {
     return (
       <div className="fixed inset-0 flex flex-col bg-gray-100">
         {/* Mobile Header */}
-        <header className="bg-white shadow-sm px-3 py-2 flex items-center justify-between flex-shrink-0 z-10" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
+        <header className="bg-white shadow-sm px-3 py-2 flex items-center justify-between flex-shrink-0 z-10">
           <h1 className="text-base font-semibold text-gray-900">Flat Analyzer</h1>
           <div className="flex items-center gap-1">
             {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded text-xs">Demo</button>}
@@ -1553,7 +1553,7 @@ export default function FlatOfferAnalyzer() {
         </div>
 
         {/* Mobile Bottom Nav */}
-        <nav className="bg-white border-t border-gray-200 flex flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <nav className="bg-white border-t border-gray-200 flex flex-shrink-0">
           <MobileTabButton view="list" label="List" icon="☰" />
           <MobileTabButton view="detail" label="Detail" icon="◉" />
           <MobileTabButton view="chart" label="Chart" icon="◈" />
