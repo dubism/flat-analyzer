@@ -1351,7 +1351,7 @@ export default function FlatOfferAnalyzer() {
     );
 
     return (
-      <div className="h-[100dvh] flex flex-col bg-gray-100 relative">
+      <div className="fixed inset-0 flex flex-col bg-gray-100">
         {/* Mobile Header */}
         <header className="bg-white shadow-sm px-3 py-2 flex items-center justify-between flex-shrink-0 z-10" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
           <h1 className="text-base font-semibold text-gray-900">Flat Analyzer</h1>
