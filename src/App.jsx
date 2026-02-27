@@ -33,6 +33,145 @@ import {
 } from './firebase';
 
 // ============================================================================
+// LANGUAGE / TRANSLATION SYSTEM
+// ============================================================================
+
+const T = {
+  cs: {
+    // Header
+    addOffer: '+ Přidat', demo: 'Demo', langToggle: 'EN',
+    // Mobile tabs
+    tabList: 'Seznam', tabDetail: 'Detail', tabChart: 'Graf',
+    // List view
+    noOffers: 'Žádné nabídky', noOffersTip: 'Klepněte na + Přidat',
+    sortGraphScore: 'Skóre', sortManual: 'Ručně', sortPrice: 'Cena',
+    sortSize: 'Plocha', sortPricePerSqm: 'Kč/m²', sortName: 'Název',
+    groupNone: 'Bez skupin', groupLocation: 'Lokalita', groupRenovation: 'Rekonstrukce',
+    soldSection: 'Prodané',
+    // Detail view
+    backToList: '← Seznam', notesPlaceholder: 'Poznámky...', ratingsSection: 'Hodnocení',
+    selectOffer: 'Vyberte nabídku ze seznamu', goToList: 'Přejít na seznam',
+    link: 'Odkaz', markSold: 'Označit jako prodané', soldLabel: 'Prodané',
+    edit: 'Upravit', email: 'E-mail', photo: 'Fotka',
+    // Chart
+    starOffersHint: 'Označte nabídky hvězdičkou pro porovnání',
+    autoButton: 'Auto', rangesButton: 'Rozsahy', rangesTitle: 'Rozsahy',
+    // Shared modal actions
+    cancel: 'Zrušit', save: 'Uložit', add: 'Přidat', remove: 'Odebrat',
+    close: '✕', colors: 'Barva',
+    // AddOfferModal
+    addOfferTitle: 'Přidat nabídku',
+    listingUrlLabel: 'URL inzerátu', listingTextLabel: 'Text inzerátu',
+    listingTextPlaceholder: 'Vložte text inzerátu ze stránky...',
+    analyzeButton: 'Analyzovat', editTextButton: '← Upravit text',
+    nameLabel: 'Název', propertyDataSection: 'Data nemovitosti',
+    addOfferButton: 'Přidat nabídku',
+    // EditOfferModal
+    editOfferTitle: 'Upravit nabídku',
+    priceLabel: 'Cena', sizeLabel: 'Plocha', roomsLabel: 'Dispozice',
+    floorLabel: 'Patro', balconyLabel: 'Balkón/Lodžie', cellarLabel: 'Sklep',
+    parkingLabel: 'Parkování', buildingLabel: 'Budova', energyLabel: 'Energie',
+    addressLabel: 'Adresa', locationLabel: 'Lokalita', urlLabel: 'URL',
+    // DeleteConfirmModal
+    deleteTitle: 'Smazat nabídku?', deleteWillBeDeleted: 'bude trvale odstraněna.',
+    deleteConfirm: 'Smazat',
+    // EmailModal
+    emailTitle: 'Návrh e-mailu', copyToClipboard: 'Kopírovat do schránky',
+    // PaletteEditor
+    paletteTitle: 'Barevná paleta', regenerate: 'Obnovit', resetDefault: 'Výchozí',
+    // ImagePasteModal
+    photoTitle: 'Fotografie nemovitosti',
+    photoPasteHint: 'Vložit, přetáhnout nebo kliknout',
+    photoPasteShortcut: 'Ctrl+V pro vložení',
+    photoMobileHint: 'Klepnutím vyberte fotku',
+    photoGallery: 'Galerie', photoCamera: 'Kamera',
+    // FIELD_LABELS
+    fieldPrice: 'Cena', fieldSize: 'Plocha', fieldRooms: 'Dispozice',
+    fieldFloor: 'Patro', fieldAddress: 'Adresa', fieldLocation: 'Lokalita',
+    fieldBalcony: 'Balkón/Lodžie', fieldCellar: 'Sklep', fieldParking: 'Parkování',
+    fieldBuilding: 'Budova', fieldEnergy: 'Energie',
+    // Sync panel
+    syncConnected: 'Připojeno', syncCreateRoom: 'Vytvořit místnost',
+    syncRoomCodePlaceholder: 'Kód místnosti', syncJoin: 'Připojit',
+    syncDisconnect: 'Odpojit', syncCopyLink: 'Kopírovat odkaz',
+    syncSharedHint: 'Sdílejte URL nebo kód místnosti. Ostatní uvidí živé úpravy.',
+    syncOffersHint: 'Synchronizujte nabídky mezi zařízeními v reálném čase.',
+    // Import
+    validJsonFound: 'Nalezen platný JSON',
+    offersToImport: 'nabídky připraveny k importu.',
+    existingOffers: 'Máte',
+    existingOffersSuffix: 'stávajících nabídek.',
+    addToExisting: 'Přidat ke stávajícím',
+    replaceAll: 'Nahradit vše',
+    total: 'celkem',
+    keepOnly: 'ponechat jen',
+    dropJsonHint: 'Pusťte soubor JSON pro import',
+    dropJsonSub: 'Uvolněte pro import nabídek',
+  },
+  en: {
+    addOffer: '+ Add', demo: 'Demo', langToggle: 'CS',
+    tabList: 'List', tabDetail: 'Detail', tabChart: 'Chart',
+    noOffers: 'No offers yet', noOffersTip: 'Tap + Add to start',
+    sortGraphScore: 'Graph score', sortManual: 'Manual', sortPrice: 'Price',
+    sortSize: 'Interior area', sortPricePerSqm: 'Kč/m²', sortName: 'Name',
+    groupNone: 'None', groupLocation: 'Location', groupRenovation: 'Reno',
+    soldSection: 'Sold',
+    backToList: '← List', notesPlaceholder: 'Notes...', ratingsSection: 'Ratings',
+    selectOffer: 'Select an offer from the list', goToList: 'Go to list',
+    link: 'Link', markSold: 'Mark Sold', soldLabel: 'Sold',
+    edit: 'Edit', email: 'Email', photo: 'Photo',
+    starOffersHint: 'Star offers to compare them here',
+    autoButton: 'Auto', rangesButton: 'Ranges', rangesTitle: 'Ranges',
+    cancel: 'Cancel', save: 'Save', add: 'Add', remove: 'Remove',
+    close: '✕', colors: 'Color',
+    addOfferTitle: 'Add Offer',
+    listingUrlLabel: 'Listing URL', listingTextLabel: 'Listing Text',
+    listingTextPlaceholder: 'Paste the full listing text from the website...',
+    analyzeButton: 'Analyze', editTextButton: '← Edit text',
+    nameLabel: 'Name', propertyDataSection: 'Property Data',
+    addOfferButton: 'Add Offer',
+    editOfferTitle: 'Edit Offer',
+    priceLabel: 'Price', sizeLabel: 'Interior area', roomsLabel: 'Rooms',
+    floorLabel: 'Floor', balconyLabel: 'Balcony/Loggia', cellarLabel: 'Cellar',
+    parkingLabel: 'Parking', buildingLabel: 'Building', energyLabel: 'Energy',
+    addressLabel: 'Address', locationLabel: 'Location', urlLabel: 'URL',
+    deleteTitle: 'Delete offer?', deleteWillBeDeleted: 'will be permanently deleted.',
+    deleteConfirm: 'Delete',
+    emailTitle: 'Draft Email', copyToClipboard: 'Copy to Clipboard',
+    paletteTitle: 'Color Palette', regenerate: 'Regenerate', resetDefault: 'Reset',
+    photoTitle: 'Property Photo',
+    photoPasteHint: 'Paste, drop, or click',
+    photoPasteShortcut: 'Ctrl+V to paste',
+    photoMobileHint: 'Tap to choose photo',
+    photoGallery: 'Gallery', photoCamera: 'Camera',
+    fieldPrice: 'Price', fieldSize: 'Interior area', fieldRooms: 'Rooms',
+    fieldFloor: 'Floor', fieldAddress: 'Address', fieldLocation: 'Location',
+    fieldBalcony: 'Balcony/Loggia', fieldCellar: 'Cellar', fieldParking: 'Parking',
+    fieldBuilding: 'Building', fieldEnergy: 'Energy',
+    syncConnected: 'Connected', syncCreateRoom: 'Create Room',
+    syncRoomCodePlaceholder: 'Room code', syncJoin: 'Join',
+    syncDisconnect: 'Disconnect', syncCopyLink: 'Copy link',
+    syncSharedHint: 'Share the URL or room code. Anyone with it sees live updates.',
+    syncOffersHint: 'Sync offers across devices in real time.',
+    validJsonFound: 'Valid JSON found',
+    offersToImport: 'offers ready to import.',
+    existingOffers: 'You have',
+    existingOffersSuffix: 'existing offers.',
+    addToExisting: 'Add to existing',
+    replaceAll: 'Replace all',
+    total: 'total',
+    keepOnly: 'keep only',
+    dropJsonHint: 'Drop JSON file to import',
+    dropJsonSub: 'Release to import offers',
+  },
+};
+
+// Module-level lang state — initialized from localStorage so t() works before first render.
+// Updated synchronously when user toggles language.
+let _lang = (typeof localStorage !== 'undefined' && localStorage.getItem('flatAnalyzerLang')) || 'cs';
+const t = (key) => T[_lang]?.[key] ?? T.en?.[key] ?? key;
+
+// ============================================================================
 // HOOKS
 // ============================================================================
 
@@ -116,18 +255,19 @@ function DeleteConfirmModal({ offerName, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl p-4 max-w-sm w-full mx-4 shadow-xl">
-        <h3 className="text-lg font-semibold mb-2">Delete offer?</h3>
-        <p className="text-gray-600 mb-4">"{offerName}" will be permanently deleted.</p>
+        <h3 className="text-lg font-semibold mb-2">{t('deleteTitle')}</h3>
+        <p className="text-gray-600 mb-4">„{offerName}" {t('deleteWillBeDeleted')}</p>
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
-          <button onClick={onConfirm} className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700">Delete</button>
+          <button onClick={onCancel} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg">{t('cancel')}</button>
+          <button onClick={onConfirm} className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700">{t('deleteConfirm')}</button>
         </div>
       </div>
     </div>
   );
 }
 
-const FIELD_LABELS = { PRICE: 'Price', SIZE: 'Interior area', ROOMS: 'Rooms', FLOOR: 'Floor', ADDRESS: 'Address', LOCATION: 'Location', BALCONY: 'Balcony/Loggia', CELLAR: 'Cellar', PARKING: 'Parking', BUILDING: 'Building', ENERGY: 'Energy' };
+// Computed dynamically inside FlatOfferAnalyzer using t() — see fieldLabels below
+const FIELD_LABELS_STATIC = { PRICE: 'Price', SIZE: 'Interior area', ROOMS: 'Rooms', FLOOR: 'Floor', ADDRESS: 'Address', LOCATION: 'Location', BALCONY: 'Balcony/Loggia', CELLAR: 'Cellar', PARKING: 'Parking', BUILDING: 'Building', ENERGY: 'Energy' };
 const formatFieldValue = (k, v) => {
   if (!v) return '';
   if (k === 'PRICE') return formatPrice(parsePrice(v));
@@ -167,6 +307,10 @@ function ZoomableChart({ children }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const containerRef = useRef(null);
+  const lastTouchDistRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const panRef = useRef({ x: 0, y: 0 });
 
   const handleWheel = (e) => {
     e.preventDefault();
@@ -188,16 +332,69 @@ function ZoomableChart({ children }) {
   const handleMouseUp = () => setIsDragging(false);
   const handleDoubleClick = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
+  // Touch handlers for pinch-zoom and single-finger pan
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastTouchDistRef.current = Math.hypot(dx, dy);
+    } else if (e.touches.length === 1) {
+      isDraggingRef.current = true;
+      dragStartRef.current = { x: e.touches[0].clientX - panRef.current.x, y: e.touches[0].clientY - panRef.current.y };
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      if (lastTouchDistRef.current) {
+        const scale = dist / lastTouchDistRef.current;
+        setZoom(z => Math.max(0.5, Math.min(3, z * scale)));
+      }
+      lastTouchDistRef.current = dist;
+    } else if (e.touches.length === 1 && isDraggingRef.current) {
+      const newPan = {
+        x: e.touches[0].clientX - dragStartRef.current.x,
+        y: e.touches[0].clientY - dragStartRef.current.y,
+      };
+      panRef.current = newPan;
+      setPan(newPan);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    isDraggingRef.current = false;
+    lastTouchDistRef.current = null;
+  };
+
+  // Register non-passive touchmove so we can preventDefault on multi-touch
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e) => { if (e.touches.length > 1) e.preventDefault(); };
+    el.addEventListener('touchmove', handler, { passive: false });
+    return () => el.removeEventListener('touchmove', handler);
+  }, []);
+
+  // Keep panRef in sync with pan state (used by touch handlers)
+  useEffect(() => { panRef.current = pan; }, [pan]);
+
   return (
     <div
       ref={containerRef}
       className="w-full h-full overflow-hidden cursor-grab active:cursor-grabbing"
+      style={{ touchAction: 'none' }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onDoubleClick={handleDoubleClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center', height: '100%' }}>
         {children}
@@ -213,10 +410,11 @@ function ZoomableChart({ children }) {
 // IMAGE PASTE MODAL
 // ============================================================================
 
-function ImagePasteModal({ onClose, onSave, onRemove, currentImage }) {
+function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) {
   const [image, setImage] = useState(currentImage || null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
 
   // Compress image to max 800px wide, JPEG 0.7 quality (~50-100KB)
   const compressImage = (dataUrl) => {
@@ -287,8 +485,8 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage }) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
         <div className="p-3 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="text-base font-semibold">Property Photo</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+          <h2 className="text-base font-semibold">{t('photoTitle')}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">{t('close')}</button>
         </div>
         <div className="p-4">
           {image ? (
@@ -298,6 +496,23 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage }) {
               </div>
               <button onClick={() => setImage(null)} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-full text-white">✕</button>
             </div>
+          ) : isMobile ? (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-4 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-1"
+              >
+                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                <span className="text-sm text-gray-600 font-medium">{t('photoGallery')}</span>
+              </button>
+              <button
+                onClick={() => cameraInputRef.current?.click()}
+                className="w-full py-4 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 flex flex-col items-center justify-center gap-1"
+              >
+                <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <span className="text-sm text-blue-600 font-medium">{t('photoCamera')}</span>
+              </button>
+            </div>
           ) : (
             <div
               onDrop={handleDrop}
@@ -306,17 +521,18 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage }) {
               onClick={() => fileInputRef.current?.click()}
               className={`w-full aspect-[4/3] rounded-lg border-2 border-dashed cursor-pointer flex flex-col items-center justify-center ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
             >
-              <p className="text-sm text-gray-600 font-medium">Paste, drop, or click</p>
-              <p className="text-xs text-gray-400 mt-1">Ctrl+V to paste</p>
+              <p className="text-sm text-gray-600 font-medium">{t('photoPasteHint')}</p>
+              <p className="text-xs text-gray-400 mt-1">{t('photoPasteShortcut')}</p>
             </div>
           )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
         </div>
         <div className="p-3 border-t border-gray-200 flex justify-between">
-          <div>{currentImage && <button onClick={onRemove} className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-sm">Remove</button>}</div>
+          <div>{currentImage && <button onClick={onRemove} className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-sm">{t('remove')}</button>}</div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">Cancel</button>
-            <button onClick={() => onSave(image)} disabled={!image} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50">Save</button>
+            <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">{t('cancel')}</button>
+            <button onClick={() => onSave(image)} disabled={!image} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50">{t('save')}</button>
           </div>
         </div>
       </div>
@@ -416,31 +632,31 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
   };
 
   const OBJECTIVE_FIELDS = [
-    { key: 'PRICE', label: 'Price', unit: 'Kč' },
-    { key: 'SIZE', label: 'Interior area', unit: 'm²' },
-    { key: 'ROOMS', label: 'Rooms' },
-    { key: 'FLOOR', label: 'Floor' },
-    { key: 'ADDRESS', label: 'Address' },
-    { key: 'LOCATION', label: 'Location' },
-    { key: 'BALCONY', label: 'Balcony/Loggia', unit: 'm²' },
-    { key: 'CELLAR', label: 'Cellar', unit: 'm²' },
-    { key: 'PARKING', label: 'Parking' },
-    { key: 'BUILDING', label: 'Building' },
-    { key: 'ENERGY', label: 'Energy' },
+    { key: 'PRICE', label: t('priceLabel'), unit: 'Kč', inputMode: 'numeric' },
+    { key: 'SIZE', label: t('sizeLabel'), unit: 'm²', inputMode: 'decimal' },
+    { key: 'ROOMS', label: t('roomsLabel') },
+    { key: 'FLOOR', label: t('floorLabel'), inputMode: 'numeric' },
+    { key: 'ADDRESS', label: t('addressLabel') },
+    { key: 'LOCATION', label: t('locationLabel') },
+    { key: 'BALCONY', label: t('balconyLabel'), unit: 'm²', inputMode: 'decimal' },
+    { key: 'CELLAR', label: t('cellarLabel'), unit: 'm²', inputMode: 'decimal' },
+    { key: 'PARKING', label: t('parkingLabel') },
+    { key: 'BUILDING', label: t('buildingLabel') },
+    { key: 'ENERGY', label: t('energyLabel') },
   ];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full shadow-xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl max-w-2xl w-full shadow-xl modal-max-h-90 flex flex-col">
         <div className="p-3 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="text-base font-semibold">Add Offer</h2>
+          <h2 className="text-base font-semibold">{t('addOfferTitle')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
-        
+
         <div className="p-3 flex-grow overflow-y-auto">
           {/* Color picker */}
           <div className="mb-3">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Color</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{t('colors')}</label>
             <div className="flex gap-1.5 flex-wrap">
               {palette.map(color => (
                 <button
@@ -456,22 +672,25 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
           
           {/* URL input */}
           <div className="mb-3">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Listing URL</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{t('listingUrlLabel')}</label>
             <input
               type="url"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               placeholder="https://sreality.cz/..."
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
             />
           </div>
-          
+
           {/* Listing text */}
           <div className={`mb-3 ${extractionPhase === 'extracted' ? 'pb-3 border-b border-gray-200' : ''}`}>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-medium text-gray-700">Listing Text</label>
+              <label className="text-xs font-medium text-gray-700">{t('listingTextLabel')}</label>
               {extractionPhase === 'extracted' && (
-                <button onClick={handleReanalyze} className="text-xs text-blue-600 hover:text-blue-700">← Edit text</button>
+                <button onClick={handleReanalyze} className="text-xs text-blue-600 hover:text-blue-700">{t('editTextButton')}</button>
               )}
             </div>
             <textarea
@@ -479,27 +698,27 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
               value={pasteText}
               onChange={(e) => extractionPhase === 'input' && setPasteText(e.target.value)}
               readOnly={extractionPhase === 'extracted'}
-              placeholder="Paste the full listing text from the website..."
+              placeholder={t('listingTextPlaceholder')}
               className={`w-full px-2 py-1.5 border border-gray-300 rounded text-sm resize-none ${extractionPhase === 'extracted' ? 'h-20 bg-gray-50 text-gray-600' : 'h-32'}`}
             />
-            
+
             {extractionPhase === 'input' && (
               <button
                 onClick={runAnalysis}
                 disabled={!pasteText.trim()}
                 className="w-full mt-2 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
-                Analyze
+                {t('analyzeButton')}
               </button>
             )}
           </div>
-          
+
           {/* Extracted data form */}
           {extractionPhase === 'extracted' && (
             <div className="space-y-4" onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}>
               {/* Name */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('nameLabel')}</label>
                 <input
                   value={getFieldValue('name')}
                   onFocus={() => handleFieldFocus('name')}
@@ -513,9 +732,9 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
               
               {/* Objective fields */}
               <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Property Data</h3>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{t('propertyDataSection')}</h3>
                 <div className="grid grid-cols-3 gap-2">
-                  {OBJECTIVE_FIELDS.map(({ key, label, unit }) => (
+                  {OBJECTIVE_FIELDS.map(({ key, label, unit, inputMode }) => (
                     <div key={key}>
                       <label className="block text-[10px] text-gray-500 mb-0.5">
                         {label}{unit && <span className="text-gray-400 ml-1">({unit})</span>}
@@ -526,16 +745,17 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
                         onChange={(e) => handleFieldChange(key, e.target.value)}
                         onMouseEnter={() => setHoveredField(key)}
                         onMouseLeave={() => setHoveredField(null)}
+                        inputMode={inputMode}
                         className={`w-full px-2 py-1.5 border border-gray-300 rounded text-sm ${isFieldFromExtraction(key) ? 'text-blue-600' : 'text-gray-900'}`}
                       />
                     </div>
                   ))}
                 </div>
               </div>
-              
+
               {/* Subjective ratings */}
               <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Ratings</h3>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{t('ratingsSection')}</h3>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                   {SUBJECTIVE_PARAMS.map(param => {
                     const value = getFieldValue(param);
@@ -581,13 +801,13 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
         </div>
         
         <div className="p-3 border-t border-gray-200 flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">Cancel</button>
-          <button 
-            onClick={handleSubmit} 
+          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">{t('cancel')}</button>
+          <button
+            onClick={handleSubmit}
             disabled={extractionPhase === 'input'}
             className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
           >
-            Add Offer
+            {t('addOfferButton')}
           </button>
         </div>
       </div>
@@ -610,15 +830,15 @@ function EditOfferModal({ offer, onClose, onSave, palette }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-lg w-full shadow-xl max-h-[85vh] flex flex-col">
+      <div className="bg-white rounded-xl max-w-lg w-full shadow-xl modal-max-h-85 flex flex-col">
         <div className="p-3 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="text-base font-semibold">Edit Offer</h2>
+          <h2 className="text-base font-semibold">{t('editOfferTitle')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
         <div className="p-3 flex-grow overflow-y-auto space-y-3">
-          <div><label className={labelClass}>Name</label><input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} /></div>
+          <div><label className={labelClass}>{t('nameLabel')}</label><input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} /></div>
           <div>
-            <label className={labelClass}>Color</label>
+            <label className={labelClass}>{t('colors')}</label>
             <div className="flex gap-1 flex-wrap">
               {palette.map(color => (
                 <button
@@ -632,23 +852,23 @@ function EditOfferModal({ offer, onClose, onSave, palette }) {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className={labelClass}>Price</label><input value={formData.PRICE || ''} onChange={(e) => setFormData(p => ({ ...p, PRICE: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Interior area</label><input value={formData.SIZE || ''} onChange={(e) => setFormData(p => ({ ...p, SIZE: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Rooms</label><input value={formData.ROOMS || ''} onChange={(e) => setFormData(p => ({ ...p, ROOMS: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Floor</label><input value={formData.FLOOR || ''} onChange={(e) => setFormData(p => ({ ...p, FLOOR: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Balcony</label><input value={formData.BALCONY || ''} onChange={(e) => setFormData(p => ({ ...p, BALCONY: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Cellar</label><input value={formData.CELLAR || ''} onChange={(e) => setFormData(p => ({ ...p, CELLAR: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Parking</label><input value={formData.PARKING || ''} onChange={(e) => setFormData(p => ({ ...p, PARKING: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Building</label><input value={formData.BUILDING || ''} onChange={(e) => setFormData(p => ({ ...p, BUILDING: e.target.value }))} className={inputClass} /></div>
-            <div><label className={labelClass}>Energy</label><input value={formData.ENERGY || ''} onChange={(e) => setFormData(p => ({ ...p, ENERGY: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('priceLabel')}</label><input inputMode="numeric" value={formData.PRICE || ''} onChange={(e) => setFormData(p => ({ ...p, PRICE: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('sizeLabel')}</label><input inputMode="decimal" value={formData.SIZE || ''} onChange={(e) => setFormData(p => ({ ...p, SIZE: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('roomsLabel')}</label><input value={formData.ROOMS || ''} onChange={(e) => setFormData(p => ({ ...p, ROOMS: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('floorLabel')}</label><input inputMode="numeric" value={formData.FLOOR || ''} onChange={(e) => setFormData(p => ({ ...p, FLOOR: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('balconyLabel')}</label><input inputMode="decimal" value={formData.BALCONY || ''} onChange={(e) => setFormData(p => ({ ...p, BALCONY: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('cellarLabel')}</label><input inputMode="decimal" value={formData.CELLAR || ''} onChange={(e) => setFormData(p => ({ ...p, CELLAR: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('parkingLabel')}</label><input value={formData.PARKING || ''} onChange={(e) => setFormData(p => ({ ...p, PARKING: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('buildingLabel')}</label><input value={formData.BUILDING || ''} onChange={(e) => setFormData(p => ({ ...p, BUILDING: e.target.value }))} className={inputClass} /></div>
+            <div><label className={labelClass}>{t('energyLabel')}</label><input value={formData.ENERGY || ''} onChange={(e) => setFormData(p => ({ ...p, ENERGY: e.target.value }))} className={inputClass} /></div>
           </div>
-          <div><label className={labelClass}>Address</label><input value={formData.ADDRESS || ''} onChange={(e) => setFormData(p => ({ ...p, ADDRESS: e.target.value }))} className={inputClass} /></div>
-          <div><label className={labelClass}>Location</label><input value={formData.LOCATION || ''} onChange={(e) => setFormData(p => ({ ...p, LOCATION: e.target.value }))} className={inputClass} /></div>
-          <div><label className={labelClass}>URL</label><input value={formData.URL || ''} onChange={(e) => setFormData(p => ({ ...p, URL: e.target.value }))} className={inputClass} /></div>
+          <div><label className={labelClass}>{t('addressLabel')}</label><input value={formData.ADDRESS || ''} onChange={(e) => setFormData(p => ({ ...p, ADDRESS: e.target.value }))} className={inputClass} /></div>
+          <div><label className={labelClass}>{t('locationLabel')}</label><input value={formData.LOCATION || ''} onChange={(e) => setFormData(p => ({ ...p, LOCATION: e.target.value }))} className={inputClass} /></div>
+          <div><label className={labelClass}>{t('urlLabel')}</label><input type="url" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={formData.URL || ''} onChange={(e) => setFormData(p => ({ ...p, URL: e.target.value }))} className={inputClass} /></div>
         </div>
         <div className="p-3 border-t border-gray-200 flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">Cancel</button>
-          <button onClick={handleSubmit} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm">Save</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">{t('cancel')}</button>
+          <button onClick={handleSubmit} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm">{t('save')}</button>
         </div>
       </div>
     </div>
@@ -668,7 +888,7 @@ function EmailModal({ offer, onClose }) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl max-w-md w-full shadow-xl">
         <div className="p-3 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="text-base font-semibold">Draft Email</h2>
+          <h2 className="text-base font-semibold">{t('emailTitle')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
         <div className="p-3">
@@ -678,7 +898,7 @@ function EmailModal({ offer, onClose }) {
             <p className="font-medium text-gray-700 mb-1">Body:</p>
             <p className="whitespace-pre-line text-xs">{body}</p>
           </div>
-          <button onClick={copyToClipboard} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm">Copy to Clipboard</button>
+          <button onClick={copyToClipboard} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm">{t('copyToClipboard')}</button>
         </div>
       </div>
     </div>
@@ -720,7 +940,7 @@ function PaletteEditor({ palette, onSave, onClose }) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl w-full max-w-sm shadow-xl">
         <div className="p-3 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="text-base font-semibold">Color Palette</h2>
+          <h2 className="text-base font-semibold">{t('paletteTitle')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
 
@@ -766,10 +986,10 @@ function PaletteEditor({ palette, onSave, onClose }) {
 
           <div className="flex gap-2 mb-4">
             <button onClick={regenerate} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 transition-colors">
-              Generate new
+              {t('regenerate')}
             </button>
             <button onClick={resetDefault} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium text-gray-700 transition-colors">
-              Reset default
+              {t('resetDefault')}
             </button>
           </div>
 
@@ -782,8 +1002,8 @@ function PaletteEditor({ palette, onSave, onClose }) {
         </div>
 
         <div className="p-3 border-t border-gray-200 flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">Cancel</button>
-          <button onClick={() => onSave(colors)} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Save</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">{t('cancel')}</button>
+          <button onClick={() => onSave(colors)} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">{t('save')}</button>
         </div>
       </div>
     </div>
@@ -798,6 +1018,24 @@ export default function FlatOfferAnalyzer() {
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState('list'); // 'list' | 'detail' | 'chart'
   const [offers, setOffers] = useState([]);
+
+  // Language toggle — syncs module-level _lang so t() works in all render paths
+  const [lang, setLang] = useState(_lang);
+  const handleLangToggle = useCallback(() => {
+    const next = _lang === 'cs' ? 'en' : 'cs';
+    _lang = next;
+    localStorage.setItem('flatAnalyzerLang', next);
+    setLang(next);
+  }, []);
+
+  // Field labels computed from current language
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fieldLabels = {
+    PRICE: t('fieldPrice'), SIZE: t('fieldSize'), ROOMS: t('fieldRooms'),
+    FLOOR: t('fieldFloor'), ADDRESS: t('fieldAddress'), LOCATION: t('fieldLocation'),
+    BALCONY: t('fieldBalcony'), CELLAR: t('fieldCellar'), PARKING: t('fieldParking'),
+    BUILDING: t('fieldBuilding'), ENERGY: t('fieldEnergy'),
+  };
   const [parameterRanges, setParameterRanges] = useState(DEFAULT_PARAM_RANGES);
   const [currentOfferId, setCurrentOfferId] = useState(null);
   const [hoveredOfferId, setHoveredOfferId] = useState(null);
@@ -1240,37 +1478,35 @@ export default function FlatOfferAnalyzer() {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="w-2 h-2 bg-green-500 rounded-full" />
-                  <span className="text-xs font-medium text-green-700">Connected</span>
+                  <span className="text-xs font-medium text-green-700">{t('syncConnected')}</span>
                 </div>
                 <div className="flex items-center gap-1 mb-3">
                   <code className="flex-1 bg-gray-100 px-2 py-1.5 rounded text-sm font-mono tracking-wider text-center">{roomId}</code>
                   <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(window.location.href);
-                    }}
+                    onClick={() => { navigator.clipboard.writeText(window.location.href); }}
                     className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs font-medium text-gray-700 whitespace-nowrap"
                   >
-                    Copy link
+                    {t('syncCopyLink')}
                   </button>
                 </div>
-                <p className="text-[10px] text-gray-500 mb-2">Share the URL or room code. Anyone with it sees live updates.</p>
-                <button onClick={handleDisconnect} className="w-full py-1.5 text-xs text-red-600 hover:bg-red-50 rounded border border-red-200">Disconnect</button>
+                <p className="text-[10px] text-gray-500 mb-2">{t('syncSharedHint')}</p>
+                <button onClick={handleDisconnect} className="w-full py-1.5 text-xs text-red-600 hover:bg-red-50 rounded border border-red-200">{t('syncDisconnect')}</button>
               </div>
             ) : (
               <div>
-                <p className="text-xs text-gray-600 mb-3">Sync offers across devices in real time.</p>
+                <p className="text-xs text-gray-600 mb-3">{t('syncOffersHint')}</p>
                 <button onClick={handleCreateRoom} className="w-full py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 mb-2">
-                  Create Room
+                  {t('syncCreateRoom')}
                 </button>
                 <div className="flex gap-1">
                   <input
                     value={joinCode}
                     onChange={(e) => setJoinCode(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
-                    placeholder="Room code"
+                    placeholder={t('syncRoomCodePlaceholder')}
                     className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs font-mono"
                   />
-                  <button onClick={handleJoinRoom} disabled={joinCode.trim().length < 4} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs font-medium disabled:opacity-50">Join</button>
+                  <button onClick={handleJoinRoom} disabled={joinCode.trim().length < 4} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs font-medium disabled:opacity-50">{t('syncJoin')}</button>
                 </div>
               </div>
             )}
@@ -1317,20 +1553,29 @@ export default function FlatOfferAnalyzer() {
           </div>
           <div className="flex items-center gap-0.5 flex-shrink-0">
             {offer.data?.URL && (
-              <LinkTooltip url={offer.data.URL}>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); window.open(offer.data.URL, '_blank'); }} 
-                  className="p-1 text-blue-500 hover:text-blue-700"
+              isMobile ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); window.open(offer.data.URL, '_blank'); }}
+                  className="p-2 text-blue-500"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </button>
-              </LinkTooltip>
+              ) : (
+                <LinkTooltip url={offer.data.URL}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); window.open(offer.data.URL, '_blank'); }}
+                    className="p-1 text-blue-500 hover:text-blue-700"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  </button>
+                </LinkTooltip>
+              )
             )}
-            <button onClick={(e) => { e.stopPropagation(); toggleStar(offer.id); }} className={`p-1 ${offer.featured ? 'text-yellow-500' : 'text-gray-300 hover:text-gray-400'}`}>
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+            <button onClick={(e) => { e.stopPropagation(); toggleStar(offer.id); if (navigator.vibrate) navigator.vibrate(10); }} className={`${isMobile ? 'p-2' : 'p-1'} ${offer.featured ? 'text-yellow-500' : 'text-gray-300 hover:text-gray-400'}`}>
+              <svg className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
             </button>
-            <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(offer); }} className="p-1 text-gray-400 hover:text-red-500">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(offer); }} className={`${isMobile ? 'p-2' : 'p-1'} text-gray-400 hover:text-red-500`}>
+              <svg className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>
           </div>
         </div>
@@ -1339,11 +1584,36 @@ export default function FlatOfferAnalyzer() {
   };
 
   // ===================== MOBILE LAYOUT =====================
+
+  // Swipe left/right to navigate between List → Detail → Chart tabs
+  const TAB_ORDER = ['list', 'detail', 'chart'];
+  const swipeStartX = useRef(null);
+  const swipeStartY = useRef(null);
+  const handleSwipeTouchStart = useCallback((e) => {
+    swipeStartX.current = e.touches[0].clientX;
+    swipeStartY.current = e.touches[0].clientY;
+  }, []);
+  const handleSwipeTouchEnd = useCallback((e) => {
+    if (swipeStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - swipeStartX.current;
+    const dy = e.changedTouches[0].clientY - swipeStartY.current;
+    swipeStartX.current = null;
+    swipeStartY.current = null;
+    // Only trigger on horizontal swipes (dx > dy in magnitude)
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    setMobileView(prev => {
+      const idx = TAB_ORDER.indexOf(prev);
+      if (dx < 0 && idx < TAB_ORDER.length - 1) return TAB_ORDER[idx + 1]; // swipe left → next
+      if (dx > 0 && idx > 0) return TAB_ORDER[idx - 1];                     // swipe right → prev
+      return prev;
+    });
+  }, []);
+
   if (isMobile) {
     const MobileTabButton = ({ view, label, icon }) => (
       <button
         onClick={() => setMobileView(view)}
-        className={`flex-1 flex flex-col items-center py-2 text-xs font-medium transition-colors ${mobileView === view ? 'text-blue-600' : 'text-gray-500'}`}
+        className={`flex-1 flex flex-col items-center py-3 text-xs font-medium transition-colors ${mobileView === view ? 'text-blue-600' : 'text-gray-500'}`}
       >
         <span className="text-base mb-0.5">{icon}</span>
         <span>{label}</span>
@@ -1353,26 +1623,34 @@ export default function FlatOfferAnalyzer() {
     return (
       <div className="fixed inset-0 flex flex-col bg-gray-100">
         {/* Mobile Header */}
-        <header className="bg-white shadow-sm px-3 py-2 flex items-center justify-between flex-shrink-0 z-10">
+        <header className="bg-white shadow-sm px-3 py-2 flex items-center justify-between flex-shrink-0 z-10 safe-top">
           <h1 className="text-base font-semibold text-gray-900">Flat Analyzer</h1>
           <div className="flex items-center gap-1">
-            {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded text-xs">Demo</button>}
+            {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded text-xs">{t('demo')}</button>}
+            <button onClick={handleLangToggle} className="px-2 py-1 text-gray-500 hover:bg-gray-100 rounded text-xs font-mono">{t('langToggle')}</button>
             {renderSyncButton()}
-            <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg font-medium text-xs">+ Add</button>
+            <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg font-medium text-xs">{t('addOffer')}</button>
           </div>
         </header>
 
-        {/* Mobile Content */}
-        <div className="flex-grow overflow-hidden">
+        {/* Mobile Content — swipe left/right to change tabs */}
+        <div className="flex-grow overflow-hidden" onTouchStart={handleSwipeTouchStart} onTouchEnd={handleSwipeTouchEnd}>
           {/* LIST VIEW */}
           {mobileView === 'list' && (
             <div className="h-full flex flex-col">
               <div className="p-2 bg-white border-b border-gray-200 flex gap-1 items-center">
-                <select value={sortCriterion} onChange={(e) => setSortCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-1.5 bg-white">
-                  <optgroup label="Sort"><option value="graphScore">Graph score</option><option value="manual">Manual</option><option value="price">Price</option><option value="size">Interior area</option><option value="pricePerSqm">Kč/m²</option><option value="name">Name</option></optgroup>
+                <select value={sortCriterion} onChange={(e) => setSortCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-2 bg-white">
+                  <option value="graphScore">{t('sortGraphScore')}</option>
+                  <option value="manual">{t('sortManual')}</option>
+                  <option value="price">{t('sortPrice')}</option>
+                  <option value="size">{t('sortSize')}</option>
+                  <option value="pricePerSqm">{t('sortPricePerSqm')}</option>
+                  <option value="name">{t('sortName')}</option>
                 </select>
-                <select value={groupCriterion} onChange={(e) => setGroupCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-1.5 bg-white">
-                  <optgroup label="Grouping"><option value="none">None</option><option value="location">Location</option><option value="renovation">Reno</option></optgroup>
+                <select value={groupCriterion} onChange={(e) => setGroupCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-2 bg-white">
+                  <option value="none">{t('groupNone')}</option>
+                  <option value="location">{t('groupLocation')}</option>
+                  <option value="renovation">{t('groupRenovation')}</option>
                 </select>
                 <button onClick={() => setModal('palette')} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg flex-shrink-0" title="Colors">
                   <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
@@ -1380,13 +1658,13 @@ export default function FlatOfferAnalyzer() {
               </div>
               <div className="flex-grow overflow-y-auto p-2 space-y-1">
                 {offers.length === 0 ? (
-                  <div className="text-center text-gray-400 py-12 text-sm"><p>No offers yet</p><p className="text-xs mt-1">Tap + Add to start</p></div>
+                  <div className="text-center text-gray-400 py-12 text-sm"><p>{t('noOffers')}</p><p className="text-xs mt-1">{t('noOffersTip')}</p></div>
                 ) : processedOffers.map(g => (
                   <div key={g.key}>
                     {g.isSold ? (
                       <div className="mt-2">
                         <button onClick={() => setSoldCollapsed(!soldCollapsed)} className="flex items-center gap-1 text-xs text-gray-500 py-1 px-2">
-                          <span>{soldCollapsed ? '▸' : '▾'}</span><span>Sold ({g.offers.length})</span>
+                          <span>{soldCollapsed ? '▸' : '▾'}</span><span>{t('soldSection')} ({g.offers.length})</span>
                         </button>
                         {!soldCollapsed && g.offers.map(o => renderOfferItem(o, true))}
                       </div>
@@ -1410,7 +1688,7 @@ export default function FlatOfferAnalyzer() {
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: currentOffer.color }} />
                     <h2 className="font-semibold text-lg truncate flex-grow">{currentOffer.name}</h2>
-                    <button onClick={() => setMobileView('list')} className="text-gray-400 text-sm flex-shrink-0">← List</button>
+                    <button onClick={() => setMobileView('list')} className="text-blue-500 text-sm flex-shrink-0 px-1">{t('backToList')}</button>
                   </div>
 
                   {currentOffer.image && (
@@ -1422,7 +1700,7 @@ export default function FlatOfferAnalyzer() {
                   <div className="space-y-1.5 text-sm mb-4">
                     {['PRICE', 'SIZE', 'ROOMS', 'FLOOR', 'ADDRESS', 'LOCATION', 'BALCONY', 'CELLAR', 'PARKING', 'BUILDING', 'ENERGY'].map(k => currentOffer.data?.[k] && (
                       <div key={k} className="flex justify-between">
-                        <span className="text-gray-500">{FIELD_LABELS[k] || k}</span>
+                        <span className="text-gray-500">{fieldLabels[k] || k}</span>
                         <span className="font-medium truncate ml-2">{formatFieldValue(k, currentOffer.data[k])}</span>
                       </div>
                     ))}
@@ -1430,25 +1708,30 @@ export default function FlatOfferAnalyzer() {
 
                   <div className="flex gap-2 flex-wrap mb-4">
                     {currentOffer.data?.URL && (
-                      <a href={currentOffer.data.URL} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 font-medium">Link</a>
+                      <a href={currentOffer.data.URL} target="_blank" rel="noopener noreferrer" className="px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 font-medium">{t('link')}</a>
                     )}
-                    <button onClick={() => updateOffer(currentOffer.id, { sold: !currentOffer.sold })} className={`px-3 py-2 rounded-lg text-xs font-medium ${currentOffer.sold ? 'bg-orange-500 text-white' : 'bg-orange-50 border border-orange-200 text-orange-700'}`}>
-                      {currentOffer.sold ? 'Sold' : 'Mark Sold'}
+                    <button
+                      onClick={() => { updateOffer(currentOffer.id, { sold: !currentOffer.sold }); if (navigator.vibrate) navigator.vibrate(10); }}
+                      className={`px-3 py-2.5 rounded-lg text-xs font-medium ${currentOffer.sold ? 'bg-orange-500 text-white' : 'bg-orange-50 border border-orange-200 text-orange-700'}`}
+                    >
+                      {currentOffer.sold ? t('soldLabel') : t('markSold')}
                     </button>
-                    <button onClick={() => { setEditingOffer(currentOffer); setModal('edit'); }} className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">Edit</button>
-                    <button onClick={() => setModal('email')} className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">Email</button>
-                    <button onClick={() => setImagePasteTarget(currentOffer.id)} className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">Photo</button>
+                    <button onClick={() => { setEditingOffer(currentOffer); setModal('edit'); }} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{t('edit')}</button>
+                    <button onClick={() => setModal('email')} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{t('email')}</button>
+                    <button onClick={() => setImagePasteTarget(currentOffer.id)} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{t('photo')}</button>
+                    <button onClick={() => { const idx = offers.findIndex(o => o.id === currentOffer.id); if (idx > 0) moveOffer(currentOffer.id, offers[idx - 1].id); }} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">↑</button>
+                    <button onClick={() => { const idx = offers.findIndex(o => o.id === currentOffer.id); if (idx < offers.length - 1) moveOffer(currentOffer.id, offers[idx + 1].id); }} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">↓</button>
                   </div>
 
                   <textarea
                     value={currentOffer.notes || ''}
                     onChange={(e) => updateOffer(currentOffer.id, { notes: e.target.value })}
-                    placeholder="Notes..."
-                    className="w-full p-3 text-sm border border-gray-300 rounded-lg resize-none h-20 mb-4"
+                    placeholder={t('notesPlaceholder')}
+                    className="w-full p-3 text-sm border border-gray-300 rounded-lg resize-none min-h-[80px] h-20 mb-4"
                   />
 
                   <div className="border-t pt-3">
-                    <h3 className="text-xs font-medium text-gray-700 mb-2">Ratings</h3>
+                    <h3 className="text-xs font-medium text-gray-700 mb-2">{t('ratingsSection')}</h3>
                     {SUBJECTIVE_PARAMS.map(param => (
                       <div key={param} className="mb-3">
                         <div className="flex justify-between text-xs mb-1">
@@ -1462,8 +1745,8 @@ export default function FlatOfferAnalyzer() {
                 </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-gray-400 p-8">
-                  <p className="text-sm">Select an offer from the list</p>
-                  <button onClick={() => setMobileView('list')} className="mt-2 text-blue-600 text-sm font-medium">Go to list</button>
+                  <p className="text-sm">{t('selectOffer')}</p>
+                  <button onClick={() => setMobileView('list')} className="mt-2 text-blue-600 text-sm font-medium">{t('goToList')}</button>
                 </div>
               )}
             </div>
@@ -1474,43 +1757,45 @@ export default function FlatOfferAnalyzer() {
             <div className="h-full flex flex-col bg-white">
               <div className="flex items-center justify-between p-2 border-b border-gray-200">
                 <div className="flex gap-1">
-                  <button onClick={autoRanges} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">Auto</button>
-                  <button onClick={() => setShowRangePopup(!showRangePopup)} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">Ranges</button>
+                  <button onClick={autoRanges} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">{t('autoButton')}</button>
+                  <button onClick={() => setShowRangePopup(!showRangePopup)} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">{t('rangesButton')}</button>
                 </div>
               </div>
 
               <div className="flex-grow relative">
                 {starredOffers.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-gray-400 text-sm p-8 text-center">Star offers to compare them here</div>
+                  <div className="h-full flex items-center justify-center text-gray-400 text-sm p-8 text-center">{t('starOffersHint')}</div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={chartData} cx="50%" cy="50%" outerRadius="60%">
-                      <PolarGrid stroke="#E5E7EB" />
-                      <PolarAngleAxis dataKey="param" tick={{ fill: '#6B7280', fontSize: 9 }} />
-                      <PolarRadiusAxis angle={90} domain={[0, 10]} tick={{ fill: '#9CA3AF', fontSize: 8 }} />
-                      {starredOffers.map(offer => {
-                        const isHighlighted = offer.id === hoveredOfferId || offer.id === currentOfferId;
-                        const isDimmed = (hoveredOfferId || currentOfferId) && !isHighlighted;
-                        const noSelection = !hoveredOfferId && !currentOfferId;
-                        return (
-                          <Radar key={offer.id} name={offer.name} dataKey={offer.id} stroke={offer.color}
-                            fill={offer.color}
-                            fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.03 : noSelection ? 0.08 : 0.15}
-                            strokeOpacity={isDimmed ? 0.3 : 1}
-                            strokeWidth={isHighlighted ? 3 : noSelection ? 2.5 : 2}
-                            isAnimationActive={false}
-                          />
-                        );
-                      })}
-                      <Tooltip content={<CustomTooltip starredOffers={starredOffers} />} />
-                    </RadarChart>
-                  </ResponsiveContainer>
+                  <ZoomableChart>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart data={chartData} cx="50%" cy="50%" outerRadius="60%">
+                        <PolarGrid stroke="#E5E7EB" />
+                        <PolarAngleAxis dataKey="param" tick={{ fill: '#6B7280', fontSize: 9 }} />
+                        <PolarRadiusAxis angle={90} domain={[0, 10]} tick={{ fill: '#9CA3AF', fontSize: 8 }} />
+                        {starredOffers.map(offer => {
+                          const isHighlighted = offer.id === hoveredOfferId || offer.id === currentOfferId;
+                          const isDimmed = (hoveredOfferId || currentOfferId) && !isHighlighted;
+                          const noSelection = !hoveredOfferId && !currentOfferId;
+                          return (
+                            <Radar key={offer.id} name={offer.name} dataKey={offer.id} stroke={offer.color}
+                              fill={offer.color}
+                              fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.03 : noSelection ? 0.08 : 0.15}
+                              strokeOpacity={isDimmed ? 0.3 : 1}
+                              strokeWidth={isHighlighted ? 3 : noSelection ? 2.5 : 2}
+                              isAnimationActive={false}
+                            />
+                          );
+                        })}
+                        <Tooltip content={<CustomTooltip starredOffers={starredOffers} />} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </ZoomableChart>
                 )}
 
                 {showRangePopup && (
                   <div className="absolute top-2 right-2 left-2 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-20">
                     <div className="flex justify-between items-center mb-2">
-                      <h3 className="font-medium text-sm">Ranges</h3>
+                      <h3 className="font-medium text-sm">{t('rangesTitle')}</h3>
                       <button onClick={() => setShowRangePopup(false)} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
                     </div>
                     <div className="space-y-2">
@@ -1539,7 +1824,7 @@ export default function FlatOfferAnalyzer() {
                 </div>
               )}
 
-              <div className="p-2 border-t border-gray-200 bg-gray-50">
+              <div className="p-2 border-t border-gray-200 bg-gray-50 max-h-24 overflow-y-auto">
                 <div className="flex flex-wrap gap-1">
                   {ALL_PARAMS.map(param => (
                     <button key={param} onClick={() => setEnabledParams(prev => ({ ...prev, [param]: !prev[param] }))} className={`px-2 py-1 rounded text-[10px] ${enabledParams[param] ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-white text-gray-500 border border-gray-300'}`}>
@@ -1553,10 +1838,10 @@ export default function FlatOfferAnalyzer() {
         </div>
 
         {/* Mobile Bottom Nav */}
-        <nav className="bg-white border-t border-gray-200 flex flex-shrink-0">
-          <MobileTabButton view="list" label="List" icon="☰" />
-          <MobileTabButton view="detail" label="Detail" icon="◉" />
-          <MobileTabButton view="chart" label="Chart" icon="◈" />
+        <nav className="bg-white border-t border-gray-200 flex flex-shrink-0 safe-bottom">
+          <MobileTabButton view="list" label={t('tabList')} icon="☰" />
+          <MobileTabButton view="detail" label={t('tabDetail')} icon="◉" />
+          <MobileTabButton view="chart" label={t('tabChart')} icon="◈" />
         </nav>
 
         {/* Modals */}
@@ -1577,6 +1862,7 @@ export default function FlatOfferAnalyzer() {
             onSave={(img) => { updateOffer(imagePasteTarget, { image: img }); setImagePasteTarget(null); }}
             onRemove={() => { updateOffer(imagePasteTarget, { image: null }); setImagePasteTarget(null); }}
             currentImage={offers.find(o => o.id === imagePasteTarget)?.image}
+            isMobile={isMobile}
           />
         )}
       </div>
@@ -1648,9 +1934,10 @@ export default function FlatOfferAnalyzer() {
       <header className="bg-white rounded-lg shadow-sm p-2 mb-1 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-gray-900">Flat Analyzer</h1>
         <div className="flex items-center gap-1">
-          {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg text-xs">Demo</button>}
-          <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">+ Add</button>
+          {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg text-xs">{t('demo')}</button>}
+          <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">{t('addOffer')}</button>
           {renderSyncButton()}
+          <button onClick={handleLangToggle} className="px-2 py-1.5 text-gray-500 hover:bg-gray-100 rounded-lg text-xs font-mono">{t('langToggle')}</button>
           <button onClick={() => fileInputRef.current?.click()} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Import">↑</button>
           <input ref={fileInputRef} type="file" accept=".json" onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])} className="hidden" />
           <button onClick={exportData} className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg" title="Export">↓</button>
@@ -1759,7 +2046,7 @@ export default function FlatOfferAnalyzer() {
                 <div className="space-y-1 text-sm">
                   {['PRICE', 'SIZE', 'ROOMS', 'FLOOR', 'ADDRESS', 'LOCATION', 'BALCONY', 'CELLAR', 'PARKING', 'BUILDING', 'ENERGY'].map(k => currentOffer.data?.[k] && (
                     <div key={k} className="flex justify-between">
-                      <span className="text-gray-500">{FIELD_LABELS[k] || k}</span>
+                      <span className="text-gray-500">{fieldLabels[k] || k}</span>
                       <span className="font-medium truncate ml-2">{formatFieldValue(k, currentOffer.data[k])}</span>
                     </div>
                   ))}
@@ -1944,6 +2231,7 @@ export default function FlatOfferAnalyzer() {
           onSave={(img) => { updateOffer(imagePasteTarget, { image: img }); setImagePasteTarget(null); }}
           onRemove={() => { updateOffer(imagePasteTarget, { image: null }); setImagePasteTarget(null); }}
           currentImage={offers.find(o => o.id === imagePasteTarget)?.image}
+          isMobile={isMobile}
         />
       )}
     </div>

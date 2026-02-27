@@ -40,3 +40,46 @@ input[type="range"]::-moz-range-thumb {
   border: none;
 }
 
+/* ============================================================
+   MOBILE TOUCH OPTIMIZATIONS
+   ============================================================ */
+
+/* Eliminate 300ms tap delay globally */
+* {
+  touch-action: manipulation;
+}
+
+/* Remove iOS/Android tap highlight flash */
+button, a, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Visual press feedback on touch */
+button:active {
+  transform: scale(0.97);
+  transition: transform 60ms ease-out;
+}
+
+/* Safe-area helpers for notched devices */
+.safe-top  { padding-top:    env(safe-area-inset-top,    0px); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Modal max-height: uses dvh (shrinks when keyboard appears) with vh fallback */
+.modal-max-h-90 { max-height: 90vh; max-height: 90dvh; }
+.modal-max-h-85 { max-height: 85vh; max-height: 85dvh; }
+
+/* Larger range slider thumb on mobile for easier touch */
+@media (max-width: 768px) {
+  input[type="range"] {
+    padding: 8px 0;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+    margin-top: -11px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+  }
+}
