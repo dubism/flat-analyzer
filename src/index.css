@@ -40,7 +40,3 @@ input[type="range"]::-moz-range-thumb {
   border: none;
 }
 
-/* Safe area for mobile bottom nav */
-.safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
-}
