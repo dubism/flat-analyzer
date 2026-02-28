@@ -83,3 +83,7 @@ button:active {
     height: 28px;
   }
 }
+
+/* Hide scrollbar on mini-list sidebar */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
