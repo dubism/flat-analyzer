@@ -1769,7 +1769,8 @@ export default function FlatOfferAnalyzer() {
         </header>
 
         {/* Mobile Content — 3-panel slider; gesture handler attached via ref in useEffect above */}
-        <div ref={tabContainerRef} className="flex-grow overflow-hidden relative">
+        {/* touch-action:pan-y tells browser to handle vertical scroll natively but leave horizontal to JS */}
+        <div ref={tabContainerRef} className="flex-grow overflow-hidden relative" style={{ touchAction: 'pan-y' }}>
           {/* Slider: width=300% so each panel occupies 1/3, translateX moves between them */}
           <div ref={sliderRef} style={{ display: 'flex', width: '300%', height: '100%', transform: 'translateX(0%)', transition: 'none', willChange: 'transform' }}>
 
