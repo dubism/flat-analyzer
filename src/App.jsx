@@ -1118,7 +1118,15 @@ export default function FlatOfferAnalyzer() {
   const [enabledParams, setEnabledParams] = useState(DEFAULT_ENABLED_PARAMS);
   const [palette, setPalette] = useState([...DEFAULT_PALETTE]);
   const fileInputRef = useRef(null);
-  
+
+  // Mini-list sidebar refs and state (mobile only)
+  const mainListScrollRef = useRef(null);
+  const miniListScrollRef = useRef(null);
+  const isScrollSyncingRef = useRef(false);
+  const miniScrubRef = useRef({ state: 'idle', timerId: null, startY: 0, lastItemIdx: -1 });
+  const [miniTooltip, setMiniTooltip] = useState(null);
+  const miniTooltipTimerRef = useRef(null);
+
   // Resizable panels
   const [listWidth, setListWidth] = useState(400);
   const [detailWidth, setDetailWidth] = useState(400);
@@ -1336,6 +1344,23 @@ export default function FlatOfferAnalyzer() {
     }
     return groups;
   }, [offers, sortCriterion, groupCriterion, enabledParams, parameterRanges]);
+
+  // Flat item list for mini-list sidebar alignment (mobile)
+  const flatItemList = useMemo(() => {
+    const items = [];
+    processedOffers.forEach(g => {
+      if (g.isSold) {
+        items.push({ type: 'sold-header', height: 28 });
+        if (!soldCollapsed) {
+          g.offers.forEach(o => items.push({ type: 'offer', offer: o, sold: true, height: 48 }));
+        }
+      } else {
+        if (g.label) items.push({ type: 'group-header', label: g.label, height: 24 });
+        g.offers.forEach(o => items.push({ type: 'offer', offer: o, sold: false, height: 48 }));
+      }
+    });
+    return items;
+  }, [processedOffers, soldCollapsed]);
 
   // Actions
   const addOffer = useCallback((data) => {
@@ -1580,6 +1605,34 @@ export default function FlatOfferAnalyzer() {
     );
   };
 
+  // Mini-list scroll sync handlers
+  const handleMainListScroll = useCallback(() => {
+    if (isScrollSyncingRef.current) return;
+    isScrollSyncingRef.current = true;
+    if (miniListScrollRef.current && mainListScrollRef.current) {
+      miniListScrollRef.current.scrollTop = mainListScrollRef.current.scrollTop;
+    }
+    requestAnimationFrame(() => { isScrollSyncingRef.current = false; });
+  }, []);
+
+  const handleMiniListScroll = useCallback(() => {
+    if (isScrollSyncingRef.current) return;
+    isScrollSyncingRef.current = true;
+    if (mainListScrollRef.current && miniListScrollRef.current) {
+      mainListScrollRef.current.scrollTop = miniListScrollRef.current.scrollTop;
+    }
+    requestAnimationFrame(() => { isScrollSyncingRef.current = false; });
+  }, []);
+
+  // Mini-list tap handler
+  const handleMiniItemTap = useCallback((offer, clientY) => {
+    setCurrentOfferId(offer.id);
+    if (miniTooltipTimerRef.current) clearTimeout(miniTooltipTimerRef.current);
+    setMiniTooltip({ offerId: offer.id, name: offer.name, color: offer.color, y: clientY });
+    miniTooltipTimerRef.current = setTimeout(() => setMiniTooltip(null), 1500);
+    if (navigator.vibrate) navigator.vibrate(10);
+  }, []);
+
   // Render offer item
   const renderOfferItem = (offer, inSoldSection = false) => {
     const isSelected = offer.id === currentOfferId;
@@ -1594,7 +1647,7 @@ export default function FlatOfferAnalyzer() {
         onClick={() => { setCurrentOfferId(offer.id); if (isMobile) setMobileView('detail'); }}
         onMouseEnter={() => setHoveredOfferId(offer.id)}
         onMouseLeave={() => setHoveredOfferId(null)}
-        className={`rounded-lg cursor-pointer border-2 transition-colors flex overflow-hidden ${isSelected ? 'border-blue-500 bg-blue-50' : isHovered ? 'border-blue-300 bg-gray-50' : 'border-transparent hover:bg-gray-100'} ${offer.sold ? 'opacity-60' : ''}`}
+        className={`rounded-lg cursor-pointer border-2 transition-colors flex overflow-hidden ${isMobile ? 'h-12' : ''} ${isSelected ? 'border-blue-500 bg-blue-50' : isHovered ? 'border-blue-300 bg-gray-50' : 'border-transparent hover:bg-gray-100'} ${offer.sold ? 'opacity-60' : ''}`}
       >
         {/* Color slab on left edge */}
         <div className="w-1.5 flex-shrink-0" style={{ backgroundColor: offer.color }} />
@@ -1744,6 +1797,100 @@ export default function FlatOfferAnalyzer() {
     };
   }, [isMobile]); // Re-run when mobile layout mounts/unmounts so refs are populated
 
+  // Mini-list scrub gesture (hold + slide to change highlighted offer)
+  useEffect(() => {
+    if (!isMobile) return;
+    const miniList = miniListScrollRef.current;
+    if (!miniList) return;
+
+    const scrub = miniScrubRef.current;
+
+    const getOfferAtY = (clientY) => {
+      const rect = miniList.getBoundingClientRect();
+      const scrollY = miniList.scrollTop;
+      const localY = clientY - rect.top + scrollY;
+      let accum = 8; // py-2 top padding
+      for (let i = 0; i < flatItemList.length; i++) {
+        const item = flatItemList[i];
+        if (localY >= accum && localY < accum + item.height) {
+          return item.type === 'offer' ? { offer: item.offer, idx: i } : null;
+        }
+        accum += item.height + 4; // 4px = space-y-1
+      }
+      return null;
+    };
+
+    const onTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
+      e.stopPropagation(); // prevent parent swipe handler
+      const touch = e.touches[0];
+      scrub.state = 'holding';
+      scrub.startY = touch.clientY;
+      scrub.lastItemIdx = -1;
+
+      scrub.timerId = setTimeout(() => {
+        if (scrub.state !== 'holding') return;
+        scrub.state = 'scrubbing';
+        if (navigator.vibrate) navigator.vibrate(30);
+        const hit = getOfferAtY(touch.clientY);
+        if (hit) {
+          setCurrentOfferId(hit.offer.id);
+          setMiniTooltip({ offerId: hit.offer.id, name: hit.offer.name, color: hit.offer.color, y: touch.clientY });
+          scrub.lastItemIdx = hit.idx;
+        }
+      }, 300);
+    };
+
+    const onTouchMove = (e) => {
+      const touch = e.touches[0];
+      if (scrub.state === 'holding') {
+        if (Math.abs(touch.clientY - scrub.startY) > 10) {
+          clearTimeout(scrub.timerId);
+          scrub.state = 'idle';
+          return; // let normal scroll happen
+        }
+      }
+      if (scrub.state === 'scrubbing') {
+        e.preventDefault(); // prevent scroll while scrubbing
+        const hit = getOfferAtY(touch.clientY);
+        if (hit && hit.idx !== scrub.lastItemIdx) {
+          setCurrentOfferId(hit.offer.id);
+          setMiniTooltip({ offerId: hit.offer.id, name: hit.offer.name, color: hit.offer.color, y: touch.clientY });
+          scrub.lastItemIdx = hit.idx;
+          if (navigator.vibrate) navigator.vibrate(8);
+        } else if (hit) {
+          setMiniTooltip(prev => prev ? { ...prev, y: touch.clientY } : null);
+        }
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (scrub.state === 'holding') {
+        clearTimeout(scrub.timerId);
+        const touch = e.changedTouches[0];
+        const hit = getOfferAtY(touch.clientY);
+        if (hit) handleMiniItemTap(hit.offer, touch.clientY);
+      }
+      if (scrub.state === 'scrubbing') {
+        if (miniTooltipTimerRef.current) clearTimeout(miniTooltipTimerRef.current);
+        miniTooltipTimerRef.current = setTimeout(() => setMiniTooltip(null), 1000);
+      }
+      scrub.state = 'idle';
+      clearTimeout(scrub.timerId);
+    };
+
+    miniList.addEventListener('touchstart', onTouchStart, { passive: true });
+    miniList.addEventListener('touchmove', onTouchMove, { passive: false });
+    miniList.addEventListener('touchend', onTouchEnd, { passive: true });
+
+    return () => {
+      miniList.removeEventListener('touchstart', onTouchStart);
+      miniList.removeEventListener('touchmove', onTouchMove);
+      miniList.removeEventListener('touchend', onTouchEnd);
+      clearTimeout(scrub.timerId);
+    };
+  }, [isMobile, flatItemList, handleMiniItemTap]);
+
   if (isMobile) {
     const MobileTabButton = ({ view, label, icon }) => (
       <button
@@ -1794,7 +1941,7 @@ export default function FlatOfferAnalyzer() {
                   <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
                 </button>
               </div>
-              <div className="flex-grow overflow-y-auto p-2 space-y-1">
+              <div ref={mainListScrollRef} onScroll={handleMainListScroll} className="flex-grow overflow-y-auto p-2 space-y-1">
                 {offers.length === 0 ? (
                   <div className="text-center text-gray-400 py-12 text-sm"><p>{t('noOffers')}</p><p className="text-xs mt-1">{t('noOffersTip')}</p></div>
                 ) : processedOffers.map(g => (
@@ -1970,6 +2117,59 @@ export default function FlatOfferAnalyzer() {
             </div>
 
           </div>{/* end slider */}
+
+          {/* Mini-list sidebar — visible on detail and chart tabs */}
+          <div
+            ref={miniListScrollRef}
+            onScroll={handleMiniListScroll}
+            className="absolute top-0 left-0 bottom-0 z-10 overflow-y-auto scrollbar-hide"
+            style={{
+              width: 28,
+              paddingLeft: 6,
+              touchAction: 'none',
+              overscrollBehavior: 'contain',
+              opacity: mobileView === 'list' ? 0 : 1,
+              pointerEvents: mobileView === 'list' ? 'none' : 'auto',
+              transition: 'opacity 200ms ease-out',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
+            <div className="py-2 space-y-1">
+              {flatItemList.map((item, idx) => {
+                if (item.type !== 'offer') {
+                  return <div key={`spacer-${idx}`} style={{ height: item.height }} />;
+                }
+                const isActive = item.offer.id === currentOfferId;
+                return (
+                  <div
+                    key={item.offer.id}
+                    data-offer-id={item.offer.id}
+                    style={{
+                      height: item.height,
+                      width: 10,
+                      backgroundColor: item.offer.color,
+                      opacity: item.sold ? 0.4 : 1,
+                      borderRadius: '2px 5px 5px 2px',
+                      outline: isActive ? '2px solid #3B82F6' : 'none',
+                      outlineOffset: 1,
+                      transition: 'outline 150ms ease',
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Mini-list tooltip */}
+          {miniTooltip && (
+            <div
+              className="fixed z-50 px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none whitespace-nowrap"
+              style={{ left: 40, top: miniTooltip.y - 14 }}
+            >
+              <span className="w-2 h-2 rounded-full inline-block mr-1.5 align-middle" style={{ backgroundColor: miniTooltip.color }} />
+              {miniTooltip.name}
+            </div>
+          )}
         </div>
 
         {/* Mobile Bottom Nav */}
