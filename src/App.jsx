@@ -23,6 +23,7 @@ import {
   loadFromStorage,
   saveToStorage,
   loadDemoOffers,
+  mergeOffers,
 } from './utils';
 import {
   isConfigured as isFirebaseConfigured,
@@ -1224,10 +1225,12 @@ export default function FlatOfferAnalyzer() {
       if (data.offers) {
         // Firebase may return arrays as objects with numeric keys
         const offersArr = Array.isArray(data.offers) ? data.offers : Object.values(data.offers);
-        setOffers(offersArr.filter(Boolean).map(o => ({
+        const normalizedRemote = offersArr.filter(Boolean).map(o => ({
           ...o,
           subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
-        })));
+        }));
+        // Merge instead of replace: union of local + remote, never deletes local offers
+        setOffers(prev => mergeOffers(prev, normalizedRemote));
       }
       if (data.meta?.parameterRanges) {
         const RANGE_MIGRATION = { 'Price': 'Low price', 'Price per m²': 'Low price per m²', 'Size': 'Interior area' };
@@ -1376,6 +1379,7 @@ export default function FlatOfferAnalyzer() {
       manualOrder: offers.length,
       image: null,
       sold: false,
+      updatedAt: Date.now(),
     };
     setOffers(prev => [...prev, newOffer]);
     setCurrentOfferId(newOffer.id);
@@ -1383,11 +1387,11 @@ export default function FlatOfferAnalyzer() {
   }, [offers, palette]);
 
   const updateOffer = useCallback((id, updates) => {
-    setOffers(prev => prev.map(o => o.id === id ? { ...o, ...updates } : o));
+    setOffers(prev => prev.map(o => o.id === id ? { ...o, ...updates, updatedAt: Date.now() } : o));
   }, []);
 
   const toggleStar = useCallback((id) => {
-    setOffers(prev => prev.map(o => o.id === id ? { ...o, featured: !o.featured } : o));
+    setOffers(prev => prev.map(o => o.id === id ? { ...o, featured: !o.featured, updatedAt: Date.now() } : o));
   }, []);
 
   const confirmDelete = useCallback(() => {
@@ -1407,7 +1411,7 @@ export default function FlatOfferAnalyzer() {
       if (fromIndex === -1 || toIndex === -1) return prev;
       const [moved] = newOffers.splice(fromIndex, 1);
       newOffers.splice(toIndex, 0, moved);
-      return newOffers.map((o, i) => ({ ...o, manualOrder: i }));
+      return newOffers.map((o, i) => ({ ...o, manualOrder: i, updatedAt: Date.now() }));
     });
     setSortCriterion('manual');
   }, []);

@@ -459,3 +459,35 @@ export const loadDemoOffers = () => ({
   })),
   parameterRanges: { ...DEFAULT_PARAM_RANGES }
 });
+
+// Merge two offer arrays by id — always additive, never deletes.
+// For the same id in both sources, the one with the newer updatedAt wins.
+// Falls back to the epoch embedded in the offer id (offer_<epoch>_<random>).
+export function mergeOffers(localOffers, remoteOffers) {
+  const locals = Array.isArray(localOffers) ? localOffers.filter(Boolean) : [];
+  const remotes = Array.isArray(remoteOffers) ? remoteOffers.filter(Boolean) : [];
+
+  const getTimestamp = (offer) => {
+    if (typeof offer.updatedAt === 'number') return offer.updatedAt;
+    const m = String(offer.id || '').match(/offer_(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+
+  const merged = new Map(locals.filter(o => o.id).map(o => [o.id, o]));
+
+  for (const offer of remotes) {
+    if (!offer.id) continue;
+    if (!merged.has(offer.id)) {
+      merged.set(offer.id, offer);
+    } else if (getTimestamp(offer) > getTimestamp(merged.get(offer.id))) {
+      merged.set(offer.id, offer);
+    }
+  }
+
+  const localIds = new Set(locals.map(o => o.id).filter(Boolean));
+  const remoteOnly = remotes.filter(o => o.id && !localIds.has(o.id));
+  return [
+    ...locals.filter(o => o.id).map(o => merged.get(o.id)),
+    ...remoteOnly,
+  ];
+}
