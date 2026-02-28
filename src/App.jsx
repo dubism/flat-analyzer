@@ -85,6 +85,11 @@ const T = {
     photoPasteShortcut: 'Ctrl+V pro vložení',
     photoMobileHint: 'Klepnutím vyberte fotku',
     photoGallery: 'Galerie', photoCamera: 'Kamera',
+    photoPasteClipboard: 'Vložit ze schránky',
+    clipboardNotSupported: 'Schránka není v tomto prohlížeči podporována. Použijte Ctrl+V.',
+    clipboardNoImage: 'Schránka neobsahuje obrázek.',
+    clipboardDenied: 'Přístup ke schránce odepřen. Použijte Ctrl+V.',
+    clipboardError: 'Nelze číst schránku.',
     // FIELD_LABELS
     fieldPrice: 'Cena', fieldSize: 'Plocha', fieldRooms: 'Dispozice',
     fieldFloor: 'Patro', fieldAddress: 'Adresa', fieldLocation: 'Lokalita',
@@ -144,6 +149,11 @@ const T = {
     photoPasteShortcut: 'Ctrl+V to paste',
     photoMobileHint: 'Tap to choose photo',
     photoGallery: 'Gallery', photoCamera: 'Camera',
+    photoPasteClipboard: 'Paste from Clipboard',
+    clipboardNotSupported: 'Clipboard API not supported. Use Ctrl+V instead.',
+    clipboardNoImage: 'No image found in clipboard.',
+    clipboardDenied: 'Clipboard access denied. Use Ctrl+V instead.',
+    clipboardError: 'Could not read clipboard.',
     fieldPrice: 'Price', fieldSize: 'Interior area', fieldRooms: 'Rooms',
     fieldFloor: 'Floor', fieldAddress: 'Address', fieldLocation: 'Location',
     fieldBalcony: 'Balcony/Loggia', fieldCellar: 'Cellar', fieldParking: 'Parking',
@@ -311,6 +321,7 @@ function ZoomableChart({ children }) {
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const panRef = useRef({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
 
   const handleWheel = (e) => {
     e.preventDefault();
@@ -335,10 +346,12 @@ function ZoomableChart({ children }) {
   // Touch handlers for pinch-zoom and single-finger pan
   const handleTouchStart = (e) => {
     if (e.touches.length === 2) {
+      e.stopPropagation(); // Always capture pinch — never let tab swipe handler see it
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       lastTouchDistRef.current = Math.hypot(dx, dy);
     } else if (e.touches.length === 1) {
+      if (zoomRef.current > 1) e.stopPropagation(); // Capture single-finger pan when zoomed in
       isDraggingRef.current = true;
       dragStartRef.current = { x: e.touches[0].clientX - panRef.current.x, y: e.touches[0].clientY - panRef.current.y };
     }
@@ -369,17 +382,20 @@ function ZoomableChart({ children }) {
     lastTouchDistRef.current = null;
   };
 
-  // Register non-passive touchmove so we can preventDefault on multi-touch
+  // Register non-passive touchmove so we can preventDefault on pinch and zoomed-pan
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const handler = (e) => { if (e.touches.length > 1) e.preventDefault(); };
+    const handler = (e) => {
+      if (e.touches.length > 1 || zoomRef.current > 1) e.preventDefault();
+    };
     el.addEventListener('touchmove', handler, { passive: false });
     return () => el.removeEventListener('touchmove', handler);
   }, []);
 
-  // Keep panRef in sync with pan state (used by touch handlers)
+  // Keep panRef and zoomRef in sync with state (used by touch handlers and non-passive listener)
   useEffect(() => { panRef.current = pan; }, [pan]);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
   return (
     <div
@@ -413,6 +429,8 @@ function ZoomableChart({ children }) {
 function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) {
   const [image, setImage] = useState(currentImage || null);
   const [dragOver, setDragOver] = useState(false);
+  const [pasteLoading, setPasteLoading] = useState(false);
+  const [pasteError, setPasteError] = useState(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
@@ -481,6 +499,35 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
     if (file?.type.startsWith('image/')) loadImage(file);
   };
 
+  const handleClipboardPaste = async () => {
+    setPasteLoading(true);
+    setPasteError(null);
+    try {
+      if (!navigator.clipboard?.read) {
+        setPasteError(t('clipboardNotSupported'));
+        return;
+      }
+      const items = await navigator.clipboard.read();
+      let found = false;
+      for (const item of items) {
+        const imageType = item.types.find(tp => tp.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const file = new File([blob], 'clipboard.jpg', { type: imageType });
+          loadImage(file);
+          found = true;
+          break;
+        }
+      }
+      if (!found) setPasteError(t('clipboardNoImage'));
+    } catch (err) {
+      if (err.name === 'NotAllowedError') setPasteError(t('clipboardDenied'));
+      else setPasteError(t('clipboardError'));
+    } finally {
+      setPasteLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
@@ -496,33 +543,48 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
               </div>
               <button onClick={() => setImage(null)} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-full text-white">✕</button>
             </div>
-          ) : isMobile ? (
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full py-4 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-1"
-              >
-                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                <span className="text-sm text-gray-600 font-medium">{t('photoGallery')}</span>
-              </button>
-              <button
-                onClick={() => cameraInputRef.current?.click()}
-                className="w-full py-4 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 flex flex-col items-center justify-center gap-1"
-              >
-                <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                <span className="text-sm text-blue-600 font-medium">{t('photoCamera')}</span>
-              </button>
-            </div>
           ) : (
-            <div
-              onDrop={handleDrop}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onClick={() => fileInputRef.current?.click()}
-              className={`w-full aspect-[4/3] rounded-lg border-2 border-dashed cursor-pointer flex flex-col items-center justify-center ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
-            >
-              <p className="text-sm text-gray-600 font-medium">{t('photoPasteHint')}</p>
-              <p className="text-xs text-gray-400 mt-1">{t('photoPasteShortcut')}</p>
+            <div className="flex flex-col gap-3">
+              {/* Paste from clipboard — primary action for copy-from-browser workflow */}
+              <button
+                onClick={handleClipboardPaste}
+                disabled={pasteLoading}
+                className="w-full py-3.5 rounded-xl border-2 border-green-300 bg-green-50 flex items-center justify-center gap-2 active:bg-green-100 disabled:opacity-60"
+              >
+                <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                <span className="text-sm text-green-700 font-semibold">{pasteLoading ? '…' : t('photoPasteClipboard')}</span>
+              </button>
+              {pasteError && <p className="text-xs text-red-500 text-center -mt-1">{pasteError}</p>}
+
+              {isMobile ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 py-3 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-1"
+                  >
+                    <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <span className="text-xs text-gray-600 font-medium">{t('photoGallery')}</span>
+                  </button>
+                  <button
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="flex-1 py-3 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 flex flex-col items-center justify-center gap-1"
+                  >
+                    <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <span className="text-xs text-blue-600 font-medium">{t('photoCamera')}</span>
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`w-full py-6 rounded-lg border-2 border-dashed cursor-pointer flex flex-col items-center justify-center ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
+                >
+                  <p className="text-sm text-gray-600 font-medium">{t('photoPasteHint')}</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('photoPasteShortcut')}</p>
+                </div>
+              )}
             </div>
           )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
@@ -1585,29 +1647,100 @@ export default function FlatOfferAnalyzer() {
 
   // ===================== MOBILE LAYOUT =====================
 
-  // Swipe left/right to navigate between List → Detail → Chart tabs
+  // 3-panel slider: direction-locking gesture state machine
   const TAB_ORDER = ['list', 'detail', 'chart'];
-  const swipeStartX = useRef(null);
-  const swipeStartY = useRef(null);
-  const handleSwipeTouchStart = useCallback((e) => {
-    swipeStartX.current = e.touches[0].clientX;
-    swipeStartY.current = e.touches[0].clientY;
-  }, []);
-  const handleSwipeTouchEnd = useCallback((e) => {
-    if (swipeStartX.current === null) return;
-    const dx = e.changedTouches[0].clientX - swipeStartX.current;
-    const dy = e.changedTouches[0].clientY - swipeStartY.current;
-    swipeStartX.current = null;
-    swipeStartY.current = null;
-    // Only trigger on horizontal swipes (dx > dy in magnitude)
-    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    setMobileView(prev => {
-      const idx = TAB_ORDER.indexOf(prev);
-      if (dx < 0 && idx < TAB_ORDER.length - 1) return TAB_ORDER[idx + 1]; // swipe left → next
-      if (dx > 0 && idx > 0) return TAB_ORDER[idx - 1];                     // swipe right → prev
-      return prev;
-    });
-  }, []);
+  const tabContainerRef = useRef(null);
+  const sliderRef = useRef(null);
+  const gestureRef = useRef({ state: 'idle', startX: 0, startY: 0, startTime: 0, startTabIdx: 0 });
+  // mobileViewRef lets gesture handlers always see current tab without being in their deps
+  const mobileViewRef = useRef(mobileView);
+  // prevMobileViewRef lets the mobileView-change effect skip when gesture already handled animation
+  const prevMobileViewRef = useRef(mobileView);
+
+  // Keep mobileViewRef current
+  useEffect(() => { mobileViewRef.current = mobileView; }, [mobileView]);
+
+  // When mobileView changes via button/tap (not gesture), animate slider to new position
+  useEffect(() => {
+    if (!sliderRef.current) return;
+    if (prevMobileViewRef.current === mobileView) return;
+    prevMobileViewRef.current = mobileView;
+    const newIdx = TAB_ORDER.indexOf(mobileView);
+    sliderRef.current.style.transition = 'transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+    sliderRef.current.style.transform = `translateX(${-(newIdx * 100 / 3)}%)`;
+    const timer = setTimeout(() => { if (sliderRef.current) sliderRef.current.style.transition = 'none'; }, 310);
+    return () => clearTimeout(timer);
+  }, [mobileView]);
+
+  // Gesture handler: attach once, use mobileViewRef for current tab
+  useEffect(() => {
+    const container = tabContainerRef.current;
+    const slider = sliderRef.current;
+    if (!container || !slider) return;
+
+    const onTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
+      gestureRef.current = {
+        state: 'undecided',
+        startX: e.touches[0].clientX,
+        startY: e.touches[0].clientY,
+        startTime: Date.now(),
+        startTabIdx: TAB_ORDER.indexOf(mobileViewRef.current),
+      };
+      slider.style.transition = 'none';
+    };
+
+    const onTouchMove = (e) => {
+      const g = gestureRef.current;
+      if (g.state === 'idle' || g.state === 'vertical') return;
+      const dx = e.touches[0].clientX - g.startX;
+      const dy = e.touches[0].clientY - g.startY;
+      if (g.state === 'undecided') {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return; // wait for 10px threshold
+        g.state = Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical';
+        if (g.state === 'vertical') return; // let native scroll take over
+      }
+      // Horizontal swipe locked — prevent scroll and move slider
+      e.preventDefault();
+      const { startTabIdx } = g;
+      const atLeftEdge = startTabIdx === 0 && dx > 0;
+      const atRightEdge = startTabIdx === TAB_ORDER.length - 1 && dx < 0;
+      const offset = (atLeftEdge || atRightEdge) ? dx * 0.3 : dx; // rubber-band at edges
+      slider.style.transform = `translateX(calc(${-(startTabIdx * 100 / 3)}% + ${offset}px))`;
+    };
+
+    const onTouchEnd = (e) => {
+      const g = gestureRef.current;
+      if (g.state !== 'horizontal') { g.state = 'idle'; return; }
+      g.state = 'idle';
+      const dx = e.changedTouches[0].clientX - g.startX;
+      const dt = Math.max(1, Date.now() - g.startTime);
+      const velocity = Math.abs(dx) / dt; // px/ms
+      const containerWidth = container.offsetWidth || 375;
+      const { startTabIdx } = g;
+      let newIdx = startTabIdx;
+      if (velocity > 0.5 || Math.abs(dx) > Math.min(50, containerWidth * 0.2)) {
+        if (dx < 0 && startTabIdx < TAB_ORDER.length - 1) newIdx = startTabIdx + 1;
+        if (dx > 0 && startTabIdx > 0) newIdx = startTabIdx - 1;
+      }
+      // Animate snap to final position
+      slider.style.transition = 'transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+      slider.style.transform = `translateX(${-(newIdx * 100 / 3)}%)`;
+      setTimeout(() => { if (slider) slider.style.transition = 'none'; }, 310);
+      // Sync React state; pre-update prevMobileViewRef so the mobileView effect skips re-animating
+      prevMobileViewRef.current = TAB_ORDER[newIdx];
+      setMobileView(TAB_ORDER[newIdx]);
+    };
+
+    container.addEventListener('touchstart', onTouchStart, { passive: true });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
+    };
+  }, []); // Attach once on mount; uses refs for current values
 
   if (isMobile) {
     const MobileTabButton = ({ view, label, icon }) => (
@@ -1633,11 +1766,13 @@ export default function FlatOfferAnalyzer() {
           </div>
         </header>
 
-        {/* Mobile Content — swipe left/right to change tabs */}
-        <div className="flex-grow overflow-hidden" onTouchStart={handleSwipeTouchStart} onTouchEnd={handleSwipeTouchEnd}>
-          {/* LIST VIEW */}
-          {mobileView === 'list' && (
-            <div className="h-full flex flex-col">
+        {/* Mobile Content — 3-panel slider; gesture handler attached via ref in useEffect above */}
+        <div ref={tabContainerRef} className="flex-grow overflow-hidden relative">
+          {/* Slider: width=300% so each panel occupies 1/3, translateX moves between them */}
+          <div ref={sliderRef} style={{ display: 'flex', width: '300%', height: '100%', transform: 'translateX(0%)', transition: 'none', willChange: 'transform' }}>
+
+            {/* PANEL 0: LIST */}
+            <div style={{ width: '33.333%', flexShrink: 0, height: '100%', overflow: 'hidden' }} className="flex flex-col">
               <div className="p-2 bg-white border-b border-gray-200 flex gap-1 items-center">
                 <select value={sortCriterion} onChange={(e) => setSortCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-2 bg-white">
                   <option value="graphScore">{t('sortGraphScore')}</option>
@@ -1678,11 +1813,9 @@ export default function FlatOfferAnalyzer() {
                 ))}
               </div>
             </div>
-          )}
 
-          {/* DETAIL VIEW */}
-          {mobileView === 'detail' && (
-            <div className="h-full overflow-y-auto bg-white">
+            {/* PANEL 1: DETAIL */}
+            <div style={{ width: '33.333%', flexShrink: 0, height: '100%', overflowY: 'auto' }} className="bg-white">
               {currentOffer ? (
                 <div className="p-4">
                   <div className="flex items-center gap-2 mb-3">
@@ -1750,11 +1883,9 @@ export default function FlatOfferAnalyzer() {
                 </div>
               )}
             </div>
-          )}
 
-          {/* CHART VIEW */}
-          {mobileView === 'chart' && (
-            <div className="h-full flex flex-col bg-white">
+            {/* PANEL 2: CHART */}
+            <div style={{ width: '33.333%', flexShrink: 0, height: '100%', overflow: 'hidden' }} className="flex flex-col bg-white">
               <div className="flex items-center justify-between p-2 border-b border-gray-200">
                 <div className="flex gap-1">
                   <button onClick={autoRanges} className="px-2 py-1 text-xs bg-white hover:bg-gray-100 rounded border border-gray-300">{t('autoButton')}</button>
@@ -1834,7 +1965,8 @@ export default function FlatOfferAnalyzer() {
                 </div>
               </div>
             </div>
-          )}
+
+          </div>{/* end slider */}
         </div>
 
         {/* Mobile Bottom Nav */}
