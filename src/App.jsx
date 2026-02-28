@@ -186,7 +186,9 @@ const t = (key) => T[_lang]?.[key] ?? T.en?.[key] ?? key;
 // ============================================================================
 
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)').matches : false
+  );
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)');
     setIsMobile(mq.matches);
@@ -1740,7 +1742,7 @@ export default function FlatOfferAnalyzer() {
       container.removeEventListener('touchmove', onTouchMove);
       container.removeEventListener('touchend', onTouchEnd);
     };
-  }, []); // Attach once on mount; uses refs for current values
+  }, [isMobile]); // Re-run when mobile layout mounts/unmounts so refs are populated
 
   if (isMobile) {
     const MobileTabButton = ({ view, label, icon }) => (
@@ -1767,7 +1769,8 @@ export default function FlatOfferAnalyzer() {
         </header>
 
         {/* Mobile Content — 3-panel slider; gesture handler attached via ref in useEffect above */}
-        <div ref={tabContainerRef} className="flex-grow overflow-hidden relative">
+        {/* touch-action:pan-y tells browser to handle vertical scroll natively but leave horizontal to JS */}
+        <div ref={tabContainerRef} className="flex-grow overflow-hidden relative" style={{ touchAction: 'pan-y' }}>
           {/* Slider: width=300% so each panel occupies 1/3, translateX moves between them */}
           <div ref={sliderRef} style={{ display: 'flex', width: '300%', height: '100%', transform: 'translateX(0%)', transition: 'none', willChange: 'transform' }}>
 
