@@ -1645,10 +1645,10 @@ export default function FlatOfferAnalyzer() {
         onDragStart={() => setDraggedId(offer.id)}
         onDragOver={(e) => e.preventDefault()}
         onDrop={() => { moveOffer(draggedId, offer.id); setDraggedId(null); }}
-        onClick={() => { setCurrentOfferId(offer.id); if (isMobile) setMobileView('detail'); }}
-        onMouseEnter={() => setHoveredOfferId(offer.id)}
-        onMouseLeave={() => setHoveredOfferId(null)}
-        className={`rounded-lg cursor-pointer border-2 transition-colors flex overflow-hidden ${isMobile ? 'h-12' : ''} ${isSelected ? 'border-blue-500 bg-blue-50' : isHovered ? 'border-blue-300 bg-gray-50' : 'border-transparent hover:bg-gray-100'} ${offer.sold ? 'opacity-60' : ''}`}
+        onClick={() => { setCurrentOfferId(offer.id); if (isMobile) { if (navigator.vibrate) navigator.vibrate(10); setMobileView('detail'); } }}
+        onMouseEnter={isMobile ? undefined : () => setHoveredOfferId(offer.id)}
+        onMouseLeave={isMobile ? undefined : () => setHoveredOfferId(null)}
+        className={`rounded-lg cursor-pointer border-2 flex overflow-hidden ${isMobile ? 'h-12 active:bg-blue-50 active:scale-[0.98]' : 'transition-colors'} ${isSelected ? 'border-blue-500 bg-blue-50' : !isMobile && isHovered ? 'border-blue-300 bg-gray-50' : `border-transparent ${isMobile ? '' : 'hover:bg-gray-100'}`} ${offer.sold ? 'opacity-60' : ''}`}
       >
         {/* Color slab on left edge */}
         <div className="w-1.5 flex-shrink-0" style={{ backgroundColor: offer.color }} />
@@ -1659,7 +1659,7 @@ export default function FlatOfferAnalyzer() {
               <img 
                 src={offer.image} 
                 alt="" 
-                className={`absolute top-0 left-0 w-14 h-10 object-cover rounded transition-transform duration-200 origin-left ${isHovered ? 'scale-150 z-50 shadow-lg' : ''}`}
+                className={`absolute top-0 left-0 w-14 h-10 object-cover rounded ${isMobile ? '' : 'transition-transform duration-200 origin-left'} ${!isMobile && isHovered ? 'scale-150 z-50 shadow-lg' : ''}`}
               />
             </div>
           )}
