@@ -1126,6 +1126,7 @@ export default function FlatOfferAnalyzer() {
   const miniScrubRef = useRef({ state: 'idle', timerId: null, startY: 0, lastItemIdx: -1 });
   const [miniTooltip, setMiniTooltip] = useState(null);
   const miniTooltipTimerRef = useRef(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
 
   // Resizable panels
   const [listWidth, setListWidth] = useState(400);
@@ -1831,7 +1832,9 @@ export default function FlatOfferAnalyzer() {
       scrub.timerId = setTimeout(() => {
         if (scrub.state !== 'holding') return;
         scrub.state = 'scrubbing';
-        if (navigator.vibrate) navigator.vibrate(30);
+        setIsScrubbing(true);
+        // Strong haptic burst on hold activation
+        if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
         const hit = getOfferAtY(touch.clientY);
         if (hit) {
           setCurrentOfferId(hit.offer.id);
@@ -1872,6 +1875,7 @@ export default function FlatOfferAnalyzer() {
         if (hit) handleMiniItemTap(hit.offer, touch.clientY);
       }
       if (scrub.state === 'scrubbing') {
+        setIsScrubbing(false);
         if (miniTooltipTimerRef.current) clearTimeout(miniTooltipTimerRef.current);
         miniTooltipTimerRef.current = setTimeout(() => setMiniTooltip(null), 1000);
       }
@@ -1879,15 +1883,24 @@ export default function FlatOfferAnalyzer() {
       clearTimeout(scrub.timerId);
     };
 
+    const onTouchCancel = () => {
+      setIsScrubbing(false);
+      scrub.state = 'idle';
+      clearTimeout(scrub.timerId);
+    };
+
     miniList.addEventListener('touchstart', onTouchStart, { passive: true });
     miniList.addEventListener('touchmove', onTouchMove, { passive: false });
     miniList.addEventListener('touchend', onTouchEnd, { passive: true });
+    miniList.addEventListener('touchcancel', onTouchCancel, { passive: true });
 
     return () => {
       miniList.removeEventListener('touchstart', onTouchStart);
       miniList.removeEventListener('touchmove', onTouchMove);
       miniList.removeEventListener('touchend', onTouchEnd);
+      miniList.removeEventListener('touchcancel', onTouchCancel);
       clearTimeout(scrub.timerId);
+      setIsScrubbing(false);
     };
   }, [isMobile, flatItemList, handleMiniItemTap]);
 
@@ -1941,7 +1954,7 @@ export default function FlatOfferAnalyzer() {
                   <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
                 </button>
               </div>
-              <div ref={mainListScrollRef} onScroll={handleMainListScroll} className="flex-grow overflow-y-auto p-2 space-y-1">
+              <div ref={mainListScrollRef} onScroll={handleMainListScroll} onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }} className="flex-grow overflow-y-auto p-2 space-y-1">
                 {offers.length === 0 ? (
                   <div className="text-center text-gray-400 py-12 text-sm"><p>{t('noOffers')}</p><p className="text-xs mt-1">{t('noOffersTip')}</p></div>
                 ) : processedOffers.map(g => (
@@ -2125,13 +2138,16 @@ export default function FlatOfferAnalyzer() {
             className="absolute top-0 left-0 bottom-0 z-10 overflow-y-auto scrollbar-hide"
             style={{
               width: 28,
-              paddingLeft: 6,
+              paddingLeft: 0,
               touchAction: 'none',
               overscrollBehavior: 'contain',
               opacity: mobileView === 'list' ? 0 : 1,
               pointerEvents: mobileView === 'list' ? 'none' : 'auto',
               transition: 'opacity 200ms ease-out',
               WebkitOverflowScrolling: 'touch',
+              WebkitUserSelect: 'none',
+              userSelect: 'none',
+              WebkitTouchCallout: 'none',
             }}
           >
             <div className="py-2 space-y-1">
@@ -2140,19 +2156,21 @@ export default function FlatOfferAnalyzer() {
                   return <div key={`spacer-${idx}`} style={{ height: item.height }} />;
                 }
                 const isActive = item.offer.id === currentOfferId;
+                const isScrubTarget = isScrubbing && isActive;
                 return (
                   <div
                     key={item.offer.id}
                     data-offer-id={item.offer.id}
                     style={{
                       height: item.height,
-                      width: 10,
+                      width: isScrubTarget ? 22 : 10,
                       backgroundColor: item.offer.color,
                       opacity: item.sold ? 0.4 : 1,
-                      borderRadius: '2px 5px 5px 2px',
-                      outline: isActive ? '2px solid #3B82F6' : 'none',
+                      borderRadius: '0px 5px 5px 0px',
+                      outline: isActive && !isScrubbing ? '2px solid #3B82F6' : 'none',
                       outlineOffset: 1,
-                      transition: 'outline 150ms ease',
+                      transition: 'width 120ms cubic-bezier(0.34, 1.56, 0.64, 1), outline 150ms ease',
+                      transformOrigin: 'left center',
                     }}
                   />
                 );
