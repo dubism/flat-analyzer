@@ -512,14 +512,26 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
       }
       const items = await navigator.clipboard.read();
       let found = false;
-      for (const item of items) {
-        const imageType = item.types.find(tp => tp.startsWith('image/'));
-        if (imageType) {
-          const blob = await item.getType(imageType);
-          const file = new File([blob], 'clipboard.jpg', { type: imageType });
-          loadImage(file);
-          found = true;
-          break;
+      outer: for (const item of items) {
+        // Safari uses 'web image/png' prefix for images copied from web pages;
+        // standard browsers use 'image/png' / 'image/jpeg'. Try both.
+        const typesToTry = [
+          ...item.types.filter(tp => tp.startsWith('image/')),
+          ...item.types.filter(tp => tp.startsWith('web image/')),
+        ];
+        for (const rawType of typesToTry) {
+          try {
+            const blob = await item.getType(rawType);
+            const mimeType = rawType.startsWith('web ') ? rawType.slice(4) : rawType;
+            const ext = mimeType.split('/')[1] || 'png';
+            const file = new File([blob], `clipboard.${ext}`, { type: mimeType });
+            loadImage(file);
+            found = true;
+            break outer;
+          } catch {
+            // Type was advertised but couldn't be fetched – try next type
+            continue;
+          }
         }
       }
       if (!found) setPasteError(t('clipboardNoImage'));
