@@ -2322,7 +2322,7 @@ export default function FlatOfferAnalyzer() {
           {/* Mini-list sidebar — visible on detail and chart tabs; shows starred offers only */}
           <div
             ref={miniListScrollRef}
-            className="absolute top-0 left-0 bottom-0 z-10 overflow-y-auto scrollbar-hide"
+            className="absolute top-0 right-0 bottom-0 z-10 overflow-y-auto scrollbar-hide"
             style={{
               width: 28,
               touchAction: 'none',
@@ -2335,7 +2335,7 @@ export default function FlatOfferAnalyzer() {
               WebkitTouchCallout: 'none',
             }}
           >
-            <div className="py-2 space-y-1">
+            <div className="py-2 space-y-1 flex flex-col items-end">
               {miniStarredItems.map((offer) => {
                 const isActive = offer.id === currentOfferId;
                 const isScrubTarget = isScrubbing && isActive;
@@ -2348,11 +2348,11 @@ export default function FlatOfferAnalyzer() {
                       width: isScrubTarget ? 22 : 10,
                       backgroundColor: offer.color,
                       opacity: offer.sold ? 0.4 : 1,
-                      borderRadius: '0px 5px 5px 0px',
+                      borderRadius: '5px 0px 0px 5px',
                       outline: isActive && !isScrubbing ? '2px solid #3B82F6' : 'none',
                       outlineOffset: 1,
                       transition: 'width 120ms cubic-bezier(0.34, 1.56, 0.64, 1), outline 150ms ease',
-                      transformOrigin: 'left center',
+                      transformOrigin: 'right center',
                     }}
                   />
                 );
@@ -2364,7 +2364,7 @@ export default function FlatOfferAnalyzer() {
           {miniTooltip && (
             <div
               className="fixed z-50 px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none whitespace-nowrap"
-              style={{ left: 40, top: miniTooltip.y - 14 }}
+              style={{ right: 40, top: miniTooltip.y - 14 }}
             >
               <span className="w-2 h-2 rounded-full inline-block mr-1.5 align-middle" style={{ backgroundColor: miniTooltip.color }} />
               {miniTooltip.name}
