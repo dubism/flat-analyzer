@@ -514,6 +514,8 @@ export const loadDemoOffers = () => ({
 // Merge two offer arrays by id — always additive, never deletes.
 // For the same id in both sources, the one with the newer updatedAt wins.
 // Falls back to the epoch embedded in the offer id (offer_<epoch>_<random>).
+// Also deduplicates by content: offers with the same URL, or same name+price
+// from different devices (different IDs) are treated as the same offer.
 export function mergeOffers(localOffers, remoteOffers) {
   const locals = Array.isArray(localOffers) ? localOffers.filter(Boolean) : [];
   const remotes = Array.isArray(remoteOffers) ? remoteOffers.filter(Boolean) : [];
@@ -524,6 +526,18 @@ export function mergeOffers(localOffers, remoteOffers) {
     return m ? parseInt(m[1], 10) : 0;
   };
 
+  // Build a content fingerprint for deduplication across devices.
+  // Two offers with different IDs but same URL, or same (name + price), are duplicates.
+  const getContentKey = (offer) => {
+    const url = offer.data?.URL;
+    if (url) return `url:${url.replace(/\/$/, '').toLowerCase()}`;
+    const name = (offer.name || '').trim().toLowerCase();
+    const price = offer.data?.PRICE;
+    if (name && price) return `np:${name}|${price}`;
+    return null;
+  };
+
+  // Phase 1: merge by ID (primary key)
   const merged = new Map(locals.filter(o => o.id).map(o => [o.id, o]));
 
   for (const offer of remotes) {
@@ -535,10 +549,31 @@ export function mergeOffers(localOffers, remoteOffers) {
     }
   }
 
+  // Phase 2: deduplicate by content — keep the newer one, discard the older duplicate
+  const contentMap = new Map(); // contentKey → id of the offer to keep
+  const idsToRemove = new Set();
+  for (const [id, offer] of merged) {
+    const ck = getContentKey(offer);
+    if (!ck) continue;
+    if (contentMap.has(ck)) {
+      const existingId = contentMap.get(ck);
+      const existing = merged.get(existingId);
+      if (getTimestamp(offer) > getTimestamp(existing)) {
+        idsToRemove.add(existingId);
+        contentMap.set(ck, id);
+      } else {
+        idsToRemove.add(id);
+      }
+    } else {
+      contentMap.set(ck, id);
+    }
+  }
+
+  // Build final list preserving order: locals first (updated), then remote-only
   const localIds = new Set(locals.map(o => o.id).filter(Boolean));
-  const remoteOnly = remotes.filter(o => o.id && !localIds.has(o.id));
+  const remoteOnly = [...merged.values()].filter(o => !localIds.has(o.id));
   return [
-    ...locals.filter(o => o.id).map(o => merged.get(o.id)),
-    ...remoteOnly,
+    ...locals.filter(o => o.id && !idsToRemove.has(o.id)).map(o => merged.get(o.id)),
+    ...remoteOnly.filter(o => !idsToRemove.has(o.id)),
   ];
 }

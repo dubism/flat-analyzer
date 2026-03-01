@@ -91,6 +91,7 @@ const T = {
     clipboardNoImage: 'Schránka neobsahuje obrázek.',
     clipboardDenied: 'Přístup ke schránce odepřen. Použijte Ctrl+V.',
     clipboardError: 'Nelze číst schránku.',
+    photoTapAndPaste: 'Klepněte sem a vložte (podržte → Vložit)',
     // FIELD_LABELS
     fieldPrice: 'Cena', fieldSize: 'Plocha', fieldRooms: 'Dispozice',
     fieldFloor: 'Patro', fieldAddress: 'Adresa', fieldLocation: 'Lokalita',
@@ -155,6 +156,7 @@ const T = {
     clipboardNoImage: 'No image found in clipboard.',
     clipboardDenied: 'Clipboard access denied. Use Ctrl+V instead.',
     clipboardError: 'Could not read clipboard.',
+    photoTapAndPaste: 'Tap here and paste (hold → Paste)',
     fieldPrice: 'Price', fieldSize: 'Interior area', fieldRooms: 'Rooms',
     fieldFloor: 'Floor', fieldAddress: 'Address', fieldLocation: 'Location',
     fieldBalcony: 'Balcony/Loggia', fieldCellar: 'Cellar', fieldParking: 'Parking',
@@ -434,8 +436,13 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
   const [dragOver, setDragOver] = useState(false);
   const [pasteLoading, setPasteLoading] = useState(false);
   const [pasteError, setPasteError] = useState(null);
+  const [pasteAreaFocused, setPasteAreaFocused] = useState(false);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const pasteAreaRef = useRef(null);
+
+  // Detect iOS (Safari or any iOS browser — all use WebKit)
+  const isIOS = useMemo(() => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1), []);
 
   // Compress image to max 800px wide, JPEG 0.7 quality (~50-100KB)
   const compressImage = (dataUrl) => {
@@ -465,17 +472,28 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
     reader.readAsDataURL(file);
   };
 
+  // Extract image from paste event's clipboardData
+  const extractImageFromClipboardData = (clipboardData) => {
+    if (!clipboardData) return false;
+    const items = clipboardData.items || [];
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) { loadImage(file); return true; }
+      }
+    }
+    // Also check files array (iOS Safari may put images here)
+    const files = clipboardData.files || [];
+    for (const file of files) {
+      if (file.type.startsWith('image/')) { loadImage(file); return true; }
+    }
+    return false;
+  };
+
   useEffect(() => {
     const handlePaste = (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault();
-          const file = item.getAsFile();
-          if (file) loadImage(file);
-          break;
-        }
+      if (extractImageFromClipboardData(e.clipboardData)) {
+        e.preventDefault();
       }
     };
     const handleKeyDown = (e) => {
@@ -502,6 +520,39 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
     if (file?.type.startsWith('image/')) loadImage(file);
   };
 
+  // Handle paste on the contenteditable area (for iOS)
+  const handlePasteAreaPaste = (e) => {
+    e.preventDefault();
+    if (extractImageFromClipboardData(e.clipboardData)) return;
+    // Check if HTML content contains an <img> (iOS sometimes pastes images as HTML)
+    const html = e.clipboardData?.getData('text/html');
+    if (html) {
+      const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (imgMatch && imgMatch[1]) {
+        // Fetch the image from the embedded src
+        fetch(imgMatch[1])
+          .then(r => r.blob())
+          .then(blob => {
+            if (blob.type.startsWith('image/')) loadImage(new File([blob], 'pasted.png', { type: blob.type }));
+          })
+          .catch(() => setPasteError(t('clipboardError')));
+        return;
+      }
+    }
+    setPasteError(t('clipboardNoImage'));
+  };
+
+  // Clean up any text that gets typed into the contenteditable area
+  useEffect(() => {
+    const el = pasteAreaRef.current;
+    if (!el) return;
+    const observer = new MutationObserver(() => {
+      if (el.textContent && el.textContent.trim()) el.textContent = '';
+    });
+    observer.observe(el, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
+  }, [image]);
+
   const handleClipboardPaste = async () => {
     setPasteLoading(true);
     setPasteError(null);
@@ -513,8 +564,6 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
       const items = await navigator.clipboard.read();
       let found = false;
       outer: for (const item of items) {
-        // Safari uses 'web image/png' prefix for images copied from web pages;
-        // standard browsers use 'image/png' / 'image/jpeg'. Try both.
         const typesToTry = [
           ...item.types.filter(tp => tp.startsWith('image/')),
           ...item.types.filter(tp => tp.startsWith('web image/')),
@@ -529,7 +578,6 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
             found = true;
             break outer;
           } catch {
-            // Type was advertised but couldn't be fetched – try next type
             continue;
           }
         }
@@ -541,6 +589,47 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
     } finally {
       setPasteLoading(false);
     }
+  };
+
+  // On mobile iOS, use a contenteditable paste target instead of Clipboard API button
+  const renderPasteAction = () => {
+    if (isMobile && isIOS) {
+      // iOS: contenteditable paste target — user long-presses and selects "Paste"
+      return (
+        <>
+          <div
+            ref={pasteAreaRef}
+            contentEditable
+            onPaste={handlePasteAreaPaste}
+            onFocus={() => setPasteAreaFocused(true)}
+            onBlur={() => setPasteAreaFocused(false)}
+            className={`w-full py-3.5 rounded-xl border-2 flex items-center justify-center gap-2 cursor-text outline-none ${pasteAreaFocused ? 'border-green-500 bg-green-100 ring-2 ring-green-200' : 'border-green-300 bg-green-50'}`}
+            style={{ WebkitUserSelect: 'text', userSelect: 'text', minHeight: 48, caretColor: 'transparent' }}
+            role="textbox"
+            aria-label={t('photoTapAndPaste')}
+            suppressContentEditableWarning
+          >
+            <svg className="w-5 h-5 text-green-600 flex-shrink-0 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+            <span className="text-sm text-green-700 font-semibold pointer-events-none">{t('photoTapAndPaste')}</span>
+          </div>
+          {pasteError && <p className="text-xs text-red-500 text-center -mt-1">{pasteError}</p>}
+        </>
+      );
+    }
+    // Non-iOS (desktop + Android): programmatic Clipboard API button
+    return (
+      <>
+        <button
+          onClick={handleClipboardPaste}
+          disabled={pasteLoading}
+          className="w-full py-3.5 rounded-xl border-2 border-green-300 bg-green-50 flex items-center justify-center gap-2 active:bg-green-100 disabled:opacity-60"
+        >
+          <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+          <span className="text-sm text-green-700 font-semibold">{pasteLoading ? '…' : t('photoPasteClipboard')}</span>
+        </button>
+        {pasteError && <p className="text-xs text-red-500 text-center -mt-1">{pasteError}</p>}
+      </>
+    );
   };
 
   return (
@@ -560,16 +649,8 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {/* Paste from clipboard — primary action for copy-from-browser workflow */}
-              <button
-                onClick={handleClipboardPaste}
-                disabled={pasteLoading}
-                className="w-full py-3.5 rounded-xl border-2 border-green-300 bg-green-50 flex items-center justify-center gap-2 active:bg-green-100 disabled:opacity-60"
-              >
-                <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                <span className="text-sm text-green-700 font-semibold">{pasteLoading ? '…' : t('photoPasteClipboard')}</span>
-              </button>
-              {pasteError && <p className="text-xs text-red-500 text-center -mt-1">{pasteError}</p>}
+              {/* Paste from clipboard — iOS uses contenteditable; others use Clipboard API */}
+              {renderPasteAction()}
 
               {isMobile ? (
                 <div className="flex gap-2">
@@ -1153,6 +1234,7 @@ export default function FlatOfferAnalyzer() {
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [syncStatus, setSyncStatus] = useState('disconnected'); // 'disconnected' | 'connected' | 'error'
   const remoteUpdateRef = useRef(false);
+  const initialSyncDoneRef = useRef(false);
   const [joinCode, setJoinCode] = useState('');
 
   // Handle panel resize
@@ -1215,6 +1297,7 @@ export default function FlatOfferAnalyzer() {
     console.log('[FA] room effect, roomId:', roomId);
     if (!roomId) {
       setSyncStatus('disconnected');
+      initialSyncDoneRef.current = false;
       // Remove room from URL
       const url = new URL(window.location);
       if (url.searchParams.has('room')) {
@@ -1225,6 +1308,7 @@ export default function FlatOfferAnalyzer() {
     }
 
     setSyncStatus('connected');
+    initialSyncDoneRef.current = false;
 
     // Put room in URL so it's shareable
     const url = new URL(window.location);
@@ -1234,6 +1318,7 @@ export default function FlatOfferAnalyzer() {
     const unsub = subscribeToRoom(roomId, (data) => {
       console.log('[FA] firebase data received:', data ? Object.keys(data) : 'null', 'offers:', data?.offers ? (Array.isArray(data.offers) ? data.offers.length : Object.keys(data.offers).length) : 0);
       remoteUpdateRef.current = true;
+
       if (data.offers) {
         // Firebase may return arrays as objects with numeric keys
         const offersArr = Array.isArray(data.offers) ? data.offers : Object.values(data.offers);
@@ -1241,9 +1326,34 @@ export default function FlatOfferAnalyzer() {
           ...o,
           subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
         }));
-        // Merge instead of replace: union of local + remote, never deletes local offers
-        setOffers(prev => mergeOffers(prev, normalizedRemote));
+        // Merge local + remote (union by id, dedup by content)
+        setOffers(prev => {
+          const merged = mergeOffers(prev, normalizedRemote);
+          // On initial sync, write the merged result back so both sides converge
+          if (!initialSyncDoneRef.current) {
+            initialSyncDoneRef.current = true;
+            // Use setTimeout to avoid writing during state update
+            setTimeout(() => {
+              writeRoom(roomId, merged, parameterRanges, palette);
+              remoteUpdateRef.current = false;
+            }, 100);
+          }
+          return merged;
+        });
+      } else if (!initialSyncDoneRef.current) {
+        // Room is empty — push local data as initial state
+        initialSyncDoneRef.current = true;
+        setOffers(prev => {
+          if (prev.length > 0) {
+            setTimeout(() => {
+              writeRoom(roomId, prev, parameterRanges, palette);
+              remoteUpdateRef.current = false;
+            }, 100);
+          }
+          return prev;
+        });
       }
+
       if (data.meta?.parameterRanges) {
         const RANGE_MIGRATION = { 'Price': 'Low price', 'Price per m²': 'Low price per m²', 'Size': 'Interior area' };
         const migrated = {};
@@ -1255,20 +1365,22 @@ export default function FlatOfferAnalyzer() {
       if (data.meta?.palette) {
         setPalette(data.meta.palette);
       }
-      setTimeout(() => { remoteUpdateRef.current = false; }, 300);
+      // Keep remoteUpdateRef true long enough for React to process state updates
+      // and prevent the debounced sync effect from firing a redundant write
+      if (initialSyncDoneRef.current) {
+        setTimeout(() => { remoteUpdateRef.current = false; }, 500);
+      }
     });
 
-    // Push current data to Firebase only if we have local data (new room creation)
-    if (offers.length > 0) {
-      writeRoom(roomId, offers, parameterRanges, palette);
-    }
+    // Do NOT write stale local data to Firebase here — wait for the first
+    // onValue callback above which will merge local + remote and write back.
 
     return unsub;
   }, [roomId]);
 
   // Sync local changes to Firebase (debounced)
   useEffect(() => {
-    if (!roomId || remoteUpdateRef.current) return;
+    if (!roomId || remoteUpdateRef.current || !initialSyncDoneRef.current) return;
     const timer = setTimeout(() => {
       if (!remoteUpdateRef.current) {
         writeRoom(roomId, offers, parameterRanges, palette);
@@ -1970,7 +2082,7 @@ export default function FlatOfferAnalyzer() {
                   <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
                 </button>
               </div>
-              <div ref={mainListScrollRef} onScroll={handleMainListScroll} onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }} className="flex-grow overflow-y-auto p-2 space-y-1">
+              <div ref={mainListScrollRef} onScroll={handleMainListScroll} onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }} className="flex-grow overflow-y-auto p-2 space-y-1" style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain' }}>
                 {offers.length === 0 ? (
                   <div className="text-center text-gray-400 py-12 text-sm"><p>{t('noOffers')}</p><p className="text-xs mt-1">{t('noOffersTip')}</p></div>
                 ) : processedOffers.map(g => (
@@ -1994,7 +2106,7 @@ export default function FlatOfferAnalyzer() {
             </div>
 
             {/* PANEL 1: DETAIL */}
-            <div style={{ width: '33.333%', flexShrink: 0, height: '100%', overflowY: 'auto' }} className="bg-white">
+            <div style={{ width: '33.333%', flexShrink: 0, height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }} className="bg-white">
               {currentOffer ? (
                 <div className="p-4">
                   <div className="flex items-center gap-2 mb-3">
@@ -2134,7 +2246,7 @@ export default function FlatOfferAnalyzer() {
                 </div>
               )}
 
-              <div className="p-2 border-t border-gray-200 bg-gray-50 max-h-24 overflow-y-auto">
+              <div className="p-2 border-t border-gray-200 bg-gray-50 max-h-24 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
                 <div className="flex flex-wrap gap-1">
                   {ALL_PARAMS.map(param => (
                     <button key={param} onClick={() => setEnabledParams(prev => ({ ...prev, [param]: !prev[param] }))} className={`px-2 py-1 rounded text-[10px] ${enabledParams[param] ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-white text-gray-500 border border-gray-300'}`}>
