@@ -44,8 +44,10 @@ input[type="range"]::-moz-range-thumb {
    MOBILE TOUCH OPTIMIZATIONS
    ============================================================ */
 
-/* Eliminate 300ms tap delay globally */
-* {
+/* Eliminate 300ms tap delay — apply to interactive elements only,
+   NOT to scrollable containers (which need touch-action: auto for
+   iOS momentum / inertia scrolling). */
+button, a, [role="button"], input, select, textarea, label {
   touch-action: manipulation;
 }
 
@@ -92,6 +94,17 @@ button:active {
   input[type="range"]::-moz-range-thumb {
     width: 28px;
     height: 28px;
+  }
+}
+
+/* iOS momentum / inertia scrolling for all scrollable containers */
+@media (max-width: 768px) {
+  [class*="overflow-y-auto"],
+  [class*="overflow-auto"],
+  [style*="overflowY: auto"],
+  .ios-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
 }
 
