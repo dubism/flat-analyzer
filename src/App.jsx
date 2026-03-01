@@ -45,7 +45,8 @@ const T = {
     tabList: 'Seznam', tabDetail: 'Detail', tabChart: 'Graf',
     // List view
     noOffers: 'Žádné nabídky', noOffersTip: 'Klepněte na + Přidat',
-    sortGraphScore: 'Skóre', sortManual: 'Ručně', sortPrice: 'Cena',
+    sortGraphScore: 'Skóre grafu', sortManual: 'Ručně', sortPrice: 'Cena',
+    chartScoreTooltip: 'Součet skóre aktivních parametrů (0–10 za parametr). Objektivní parametry jsou normalizovány podle nastavených rozsahů — jejich změna ovlivní skóre.',
     sortSize: 'Plocha', sortPricePerSqm: 'Kč/m²', sortName: 'Název',
     groupNone: 'Bez skupin', groupLocation: 'Lokalita', groupRenovation: 'Rekonstrukce',
     soldSection: 'Prodané',
@@ -119,7 +120,8 @@ const T = {
     addOffer: '+ Add', demo: 'Demo', langToggle: 'CS',
     tabList: 'List', tabDetail: 'Detail', tabChart: 'Chart',
     noOffers: 'No offers yet', noOffersTip: 'Tap + Add to start',
-    sortGraphScore: 'Graph score', sortManual: 'Manual', sortPrice: 'Price',
+    sortGraphScore: 'Chart score', sortManual: 'Manual', sortPrice: 'Price',
+    chartScoreTooltip: 'Sum of enabled parameter scores (0–10 per parameter). Objective parameters are scaled by configured ranges—adjusting ranges shifts scores.',
     sortSize: 'Interior area', sortPricePerSqm: 'Kč/m²', sortName: 'Name',
     groupNone: 'None', groupLocation: 'Location', groupRenovation: 'Reno',
     soldSection: 'Sold',
@@ -1766,6 +1768,13 @@ export default function FlatOfferAnalyzer() {
   const renderOfferItem = (offer, inSoldSection = false) => {
     const isSelected = offer.id === currentOfferId;
     const isHovered = offer.id === hoveredOfferId;
+    const chartScore = sortCriterion === 'graphScore'
+      ? ALL_PARAMS.filter(p => enabledParams[p]).reduce((sum, param) => (
+          sum + (OBJECTIVE_PARAMS.includes(param)
+            ? getNormalizedValue(param, offer, parameterRanges)
+            : (offer.subjectiveRatings?.[param] ?? 5))
+        ), 0)
+      : null;
     return (
       <div
         key={offer.id}
@@ -1795,7 +1804,10 @@ export default function FlatOfferAnalyzer() {
             <div className="flex items-center gap-1.5">
               <span className={`font-medium text-sm truncate ${offer.sold ? 'line-through text-gray-500' : ''}`}>{offer.name}</span>
             </div>
-            <div className="text-xs text-gray-500 mt-0.5 truncate">{formatPrice(parsePrice(offer.data?.PRICE))} · {offer.data?.SIZE || 'N/A'}</div>
+            <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1 min-w-0">
+              <span className="truncate">{formatPrice(parsePrice(offer.data?.PRICE))} · {offer.data?.SIZE || 'N/A'}</span>
+              {chartScore !== null && <span title={t('chartScoreTooltip')} className="ml-auto flex-shrink-0 font-semibold text-indigo-600 tabular-nums">◈{chartScore.toFixed(1)}</span>}
+            </div>
           </div>
           <div className="flex items-center gap-0.5 flex-shrink-0">
             {offer.data?.URL && (
@@ -1884,8 +1896,7 @@ export default function FlatOfferAnalyzer() {
         g.state = Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical';
         if (g.state === 'vertical') return; // let native scroll take over
       }
-      // Horizontal swipe locked — prevent scroll and move slider
-      e.preventDefault();
+      // Horizontal swipe locked — move slider (touch-action:pan-y prevents native horizontal scroll)
       const { startTabIdx } = g;
       const atLeftEdge = startTabIdx === 0 && dx > 0;
       const atRightEdge = startTabIdx === TAB_ORDER.length - 1 && dx < 0;
@@ -1917,7 +1928,7 @@ export default function FlatOfferAnalyzer() {
     };
 
     container.addEventListener('touchstart', onTouchStart, { passive: true });
-    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchmove', onTouchMove, { passive: true });
     container.addEventListener('touchend', onTouchEnd, { passive: true });
     return () => {
       container.removeEventListener('touchstart', onTouchStart);
@@ -2437,7 +2448,7 @@ export default function FlatOfferAnalyzer() {
                 className="flex-1 text-xs border border-gray-300 rounded px-1 py-1 bg-white"
               >
                 <optgroup label="Sort">
-                  <option value="graphScore">Graph score</option>
+                  <option value="graphScore">Chart score</option>
                   <option value="manual">Manual</option>
                   <option value="price">Price</option>
                   <option value="size">Interior area</option>
@@ -2472,7 +2483,7 @@ export default function FlatOfferAnalyzer() {
                         Sold
                         <span className="bg-gray-400 text-white text-xs px-1.5 py-0.5 rounded-full">{g.offers.length}</span>
                       </button>
-                      <button onClick={() => setShowSoldInGraph(!showSoldInGraph)} className={`p-1 rounded ${showSoldInGraph ? 'text-blue-600 bg-blue-100' : 'text-gray-400 hover:bg-gray-300'}`} title="Show in graph">
+                      <button onClick={() => setShowSoldInGraph(!showSoldInGraph)} className={`p-1 rounded ${showSoldInGraph ? 'text-blue-600 bg-blue-100' : 'text-gray-400 hover:bg-gray-300'}`} title="Show in chart">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           {showSoldInGraph ? (
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
