@@ -1219,7 +1219,8 @@ export default function FlatOfferAnalyzer() {
   const mainListScrollRef = useRef(null);
   const miniListScrollRef = useRef(null);
   const isScrollSyncingRef = useRef(false);
-  const miniScrubRef = useRef({ state: 'idle', timerId: null, startY: 0, lastItemIdx: -1 });
+  const miniScrubRef = useRef({ state: 'idle', timerId: null, startY: 0, lastItemIdx: -1, lastTouchY: 0, lastTouchTime: 0, scrollVelocity: 0 });
+  const miniInertiaRAFRef = useRef(null);
   const [miniTooltip, setMiniTooltip] = useState(null);
   const miniTooltipTimerRef = useRef(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -1492,6 +1493,13 @@ export default function FlatOfferAnalyzer() {
     return items;
   }, [processedOffers, soldCollapsed]);
 
+  // Mini-list shows only starred/featured offers (independent of main list)
+  const miniStarredItems = useMemo(() => {
+    const result = [];
+    processedOffers.forEach(g => { g.offers.forEach(o => { if (o.featured) result.push(o); }); });
+    return result;
+  }, [processedOffers]);
+
   // Actions
   const addOffer = useCallback((data) => {
     const newOffer = {
@@ -1737,23 +1745,7 @@ export default function FlatOfferAnalyzer() {
   };
 
   // Mini-list scroll sync handlers
-  const handleMainListScroll = useCallback(() => {
-    if (isScrollSyncingRef.current) return;
-    isScrollSyncingRef.current = true;
-    if (miniListScrollRef.current && mainListScrollRef.current) {
-      miniListScrollRef.current.scrollTop = mainListScrollRef.current.scrollTop;
-    }
-    requestAnimationFrame(() => { isScrollSyncingRef.current = false; });
-  }, []);
-
-  const handleMiniListScroll = useCallback(() => {
-    if (isScrollSyncingRef.current) return;
-    isScrollSyncingRef.current = true;
-    if (mainListScrollRef.current && miniListScrollRef.current) {
-      mainListScrollRef.current.scrollTop = miniListScrollRef.current.scrollTop;
-    }
-    requestAnimationFrame(() => { isScrollSyncingRef.current = false; });
-  }, []);
+  const handleMainListScroll = useCallback(() => {}, []);
 
   // Mini-list tap handler
   const handleMiniItemTap = useCallback((offer, clientY) => {
@@ -1806,7 +1798,7 @@ export default function FlatOfferAnalyzer() {
             </div>
             <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1 min-w-0">
               <span className="truncate">{formatPrice(parsePrice(offer.data?.PRICE))} · {offer.data?.SIZE || 'N/A'}</span>
-              {chartScore !== null && <span title={t('chartScoreTooltip')} className="ml-auto flex-shrink-0 font-semibold text-indigo-600 tabular-nums">◈{chartScore.toFixed(1)}</span>}
+              {chartScore !== null && !isMobile && <span title={t('chartScoreTooltip')} className="ml-auto flex-shrink-0 font-semibold text-indigo-600 tabular-nums">◈{chartScore.toFixed(1)}</span>}
             </div>
           </div>
           <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -1945,34 +1937,38 @@ export default function FlatOfferAnalyzer() {
 
     const scrub = miniScrubRef.current;
 
+    const ITEM_HEIGHT = 48;
+    const ITEM_STRIDE = 52; // 48px height + 4px space-y-1 gap
+    const TOP_PAD = 8;      // py-2
+    const EDGE_ZONE = 50;   // px from edge to start auto-scroll
+
     const getOfferAtY = (clientY) => {
       const rect = miniList.getBoundingClientRect();
-      const scrollY = miniList.scrollTop;
-      const localY = clientY - rect.top + scrollY;
-      let accum = 8; // py-2 top padding
-      for (let i = 0; i < flatItemList.length; i++) {
-        const item = flatItemList[i];
-        if (localY >= accum && localY < accum + item.height) {
-          return item.type === 'offer' ? { offer: item.offer, idx: i } : null;
-        }
-        accum += item.height + 4; // 4px = space-y-1
+      const localY = clientY - rect.top + miniList.scrollTop;
+      const idx = Math.floor((localY - TOP_PAD) / ITEM_STRIDE);
+      if (idx >= 0 && idx < miniStarredItems.length) {
+        const itemTop = TOP_PAD + idx * ITEM_STRIDE;
+        if (localY < itemTop + ITEM_HEIGHT) return { offer: miniStarredItems[idx], idx };
       }
       return null;
     };
 
     const onTouchStart = (e) => {
       if (e.touches.length !== 1) return;
-      e.stopPropagation(); // prevent parent swipe handler
+      e.stopPropagation();
+      if (miniInertiaRAFRef.current) { cancelAnimationFrame(miniInertiaRAFRef.current); miniInertiaRAFRef.current = null; }
       const touch = e.touches[0];
       scrub.state = 'holding';
       scrub.startY = touch.clientY;
       scrub.lastItemIdx = -1;
+      scrub.lastTouchY = touch.clientY;
+      scrub.lastTouchTime = Date.now();
+      scrub.scrollVelocity = 0;
 
       scrub.timerId = setTimeout(() => {
         if (scrub.state !== 'holding') return;
         scrub.state = 'scrubbing';
         setIsScrubbing(true);
-        // Strong haptic burst on hold activation
         if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
         const hit = getOfferAtY(touch.clientY);
         if (hit) {
@@ -1985,15 +1981,29 @@ export default function FlatOfferAnalyzer() {
 
     const onTouchMove = (e) => {
       const touch = e.touches[0];
+      const now = Date.now();
+      const dy = touch.clientY - scrub.lastTouchY;
+      const dt = Math.max(1, now - scrub.lastTouchTime);
+
       if (scrub.state === 'holding') {
         if (Math.abs(touch.clientY - scrub.startY) > 10) {
           clearTimeout(scrub.timerId);
-          scrub.state = 'idle';
-          return; // let normal scroll happen
+          scrub.state = 'panning';
+        } else {
+          return;
         }
       }
+
+      if (scrub.state === 'panning') {
+        miniList.scrollTop -= dy;
+        scrub.scrollVelocity = -dy / dt; // px/ms, positive = scroll down
+        scrub.lastTouchY = touch.clientY;
+        scrub.lastTouchTime = now;
+        return;
+      }
+
       if (scrub.state === 'scrubbing') {
-        e.preventDefault(); // prevent scroll while scrubbing
+        e.preventDefault();
         const hit = getOfferAtY(touch.clientY);
         if (hit && hit.idx !== scrub.lastItemIdx) {
           setCurrentOfferId(hit.offer.id);
@@ -2003,7 +2013,19 @@ export default function FlatOfferAnalyzer() {
         } else if (hit) {
           setMiniTooltip(prev => prev ? { ...prev, y: touch.clientY } : null);
         }
+        // Gently auto-scroll when scrubbing near top/bottom edge
+        const rect = miniList.getBoundingClientRect();
+        const topDist = touch.clientY - rect.top;
+        const botDist = rect.bottom - touch.clientY;
+        if (topDist < EDGE_ZONE) {
+          miniList.scrollTop -= (EDGE_ZONE - topDist) * 0.25;
+        } else if (botDist < EDGE_ZONE) {
+          miniList.scrollTop += (EDGE_ZONE - botDist) * 0.25;
+        }
       }
+
+      scrub.lastTouchY = touch.clientY;
+      scrub.lastTouchTime = now;
     };
 
     const onTouchEnd = (e) => {
@@ -2012,6 +2034,17 @@ export default function FlatOfferAnalyzer() {
         const touch = e.changedTouches[0];
         const hit = getOfferAtY(touch.clientY);
         if (hit) handleMiniItemTap(hit.offer, touch.clientY);
+      }
+      if (scrub.state === 'panning') {
+        // Apply momentum inertia
+        let vel = scrub.scrollVelocity * 1000; // px/ms → px/s
+        const applyInertia = () => {
+          if (Math.abs(vel) < 15) { miniInertiaRAFRef.current = null; return; }
+          miniList.scrollTop += vel / 60;
+          vel *= 0.94;
+          miniInertiaRAFRef.current = requestAnimationFrame(applyInertia);
+        };
+        miniInertiaRAFRef.current = requestAnimationFrame(applyInertia);
       }
       if (scrub.state === 'scrubbing') {
         setIsScrubbing(false);
@@ -2023,6 +2056,7 @@ export default function FlatOfferAnalyzer() {
     };
 
     const onTouchCancel = () => {
+      if (miniInertiaRAFRef.current) { cancelAnimationFrame(miniInertiaRAFRef.current); miniInertiaRAFRef.current = null; }
       setIsScrubbing(false);
       scrub.state = 'idle';
       clearTimeout(scrub.timerId);
@@ -2039,9 +2073,24 @@ export default function FlatOfferAnalyzer() {
       miniList.removeEventListener('touchend', onTouchEnd);
       miniList.removeEventListener('touchcancel', onTouchCancel);
       clearTimeout(scrub.timerId);
+      if (miniInertiaRAFRef.current) { cancelAnimationFrame(miniInertiaRAFRef.current); miniInertiaRAFRef.current = null; }
       setIsScrubbing(false);
     };
-  }, [isMobile, flatItemList, handleMiniItemTap]);
+  }, [isMobile, miniStarredItems, handleMiniItemTap]);
+
+  // Keep active offer's bar visible in the mini-list when selection changes
+  useEffect(() => {
+    if (!isMobile || !miniListScrollRef.current) return;
+    const idx = miniStarredItems.findIndex(o => o.id === currentOfferId);
+    if (idx === -1) return;
+    const itemTop = 8 + idx * 52; // TOP_PAD + idx * ITEM_STRIDE
+    const container = miniListScrollRef.current;
+    if (itemTop < container.scrollTop) {
+      container.scrollTop = Math.max(0, itemTop - 8);
+    } else if (itemTop + 48 > container.scrollTop + container.clientHeight) {
+      container.scrollTop = itemTop + 48 - container.clientHeight + 8;
+    }
+  }, [currentOfferId, miniStarredItems, isMobile]);
 
   if (isMobile) {
     const MobileTabButton = ({ view, label, icon }) => (
@@ -2270,41 +2319,35 @@ export default function FlatOfferAnalyzer() {
 
           </div>{/* end slider */}
 
-          {/* Mini-list sidebar — visible on detail and chart tabs */}
+          {/* Mini-list sidebar — visible on detail and chart tabs; shows starred offers only */}
           <div
             ref={miniListScrollRef}
-            onScroll={handleMiniListScroll}
             className="absolute top-0 left-0 bottom-0 z-10 overflow-y-auto scrollbar-hide"
             style={{
               width: 28,
-              paddingLeft: 0,
               touchAction: 'none',
               overscrollBehavior: 'contain',
               opacity: mobileView === 'list' ? 0 : 1,
               pointerEvents: mobileView === 'list' ? 'none' : 'auto',
               transition: 'opacity 200ms ease-out',
-              WebkitOverflowScrolling: 'touch',
               WebkitUserSelect: 'none',
               userSelect: 'none',
               WebkitTouchCallout: 'none',
             }}
           >
             <div className="py-2 space-y-1">
-              {flatItemList.map((item, idx) => {
-                if (item.type !== 'offer') {
-                  return <div key={`spacer-${idx}`} style={{ height: item.height }} />;
-                }
-                const isActive = item.offer.id === currentOfferId;
+              {miniStarredItems.map((offer) => {
+                const isActive = offer.id === currentOfferId;
                 const isScrubTarget = isScrubbing && isActive;
                 return (
                   <div
-                    key={item.offer.id}
-                    data-offer-id={item.offer.id}
+                    key={offer.id}
+                    data-offer-id={offer.id}
                     style={{
-                      height: item.height,
+                      height: 48,
                       width: isScrubTarget ? 22 : 10,
-                      backgroundColor: item.offer.color,
-                      opacity: item.sold ? 0.4 : 1,
+                      backgroundColor: offer.color,
+                      opacity: offer.sold ? 0.4 : 1,
                       borderRadius: '0px 5px 5px 0px',
                       outline: isActive && !isScrubbing ? '2px solid #3B82F6' : 'none',
                       outlineOffset: 1,
