@@ -192,15 +192,22 @@ export function parseListingTextWithSources(text) {
     if (bedroomMatch) recordMatch('ROOMS', `${parseInt(bedroomMatch[1], 10) + 1}+kk`, bedroomMatch);
   }
 
-  // Floor
-  const floorPatterns = [/(\d+)\.\s*(?:patro|podlaží|np)(?:\s*(?:z|ze|\/)\s*(\d+))?/i, /(\d+)\s*\/\s*(\d+)\s*(?:patro|np|podlaží)?/i];
-  for (const pattern of floorPatterns) {
-    const match = cleaned.match(pattern);
-    if (match) { recordMatch('FLOOR', match[2] ? `${match[1]}/${match[2]}` : match[1], match); break; }
+  // Floor — prefer match that includes total floors; recognize locative "patře"
+  {
+    const floorRe = /(\d+)\.\s*\)?\s*(?:patro|patře|podlaží|np)\s*(?:(?:z|ze|\/)\s*(\d+))?/gi;
+    let bestFloor = null;
+    for (const m of cleaned.matchAll(floorRe)) {
+      if (!bestFloor || (m[2] && !bestFloor[2])) bestFloor = m;
+    }
+    if (!bestFloor) bestFloor = cleaned.match(/(\d+)\.\s*p\.(?:\s*(?:z|ze|\/)\s*(\d+))?/i);
+    if (!bestFloor) bestFloor = cleaned.match(/(\d+)\s*\/\s*(\d+)\s*(?:patro|np|podlaží)/i);
+    if (bestFloor) recordMatch('FLOOR', bestFloor[2] ? `${bestFloor[1]}/${bestFloor[2]}` : bestFloor[1], bestFloor);
   }
 
   // Balcony / Loggia / Terasa
   const balconyPatterns = [
+    // "Terasa o ploše 7 m²" — structured Příslušenství section (highest priority)
+    /(?:balkon|balkón|lodžie|lodži[eí]|loggie|terasa)\s+o\s+ploše\s+(\d+(?:[.,]\d+)?)\s*m/i,
     // "Balkón: 4,5 m²" or "Lodžie 5.3 m²" — number with m²
     /(?:balkon|balkón|lodžie|lodži[eí]|loggie|terasa)\s*:?\s*(\d+(?:[.,]\d+)?)\s*m/i,
     // "Balkón Ano" / "Lodžie: Ano" — boolean (record as 1)
@@ -254,36 +261,67 @@ export function parseListingTextWithSources(text) {
   if (locationMatch) recordMatch('LOCATION', locationMatch[1], locationMatch);
 
   // Address — Czech street detection with multiple strategies
-  // Czech unicode character class helpers
   const CZ_UPPER = 'A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ';
   const CZ_LOWER = 'a-záčďéěíňóřšťúůýž';
   const CZ_LETTER = CZ_UPPER + CZ_LOWER;
-  
   let addressFound = false;
-  
-  // Strategy 1: Sreality/Bezrealitky title — "Prodej bytu X+Y NN m², StreetName, Praha"
-  // Also handles "Prodej bytu X+Y, StreetName NUMBER, Praha"
-  const titlePatterns = [
-    new RegExp(`prodej\\s+bytu[^,]*,\\s*([${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)*(?:\\s+\\d{1,4}(?:\\/\\d+)?)?)\\s*,`, 'i'),
-    new RegExp(`prodej\\s+bytu[^,]*,\\s*((?:Na|U|Pod|Nad|K|V|Za|Ke|Při)\\s+[${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)*(?:\\s+\\d{1,4}(?:\\/\\d+)?)?)\\s*,`, 'i'),
-  ];
-  for (const pat of titlePatterns) {
-    const m = cleaned.match(pat);
-    if (m) { addressFound = recordMatch('ADDRESS', m[1].trim(), m); break; }
-  }
-  
-  // Strategy 2: Prepositional streets — "Na Příkopě 12", "U Uranie", "Pod Kaštany 4/6"
+
+  // Helper: capitalize street name (preposition + capitalize main word)
+  const capitalizeStreet = (str) => {
+    const words = str.trim().split(/\s+/);
+    const preps = new Set(['na', 'u', 'pod', 'nad', 'k', 'v', 'za', 'ke', 'při']);
+    words[0] = words[0].charAt(0).toUpperCase() + words[0].slice(1);
+    if (words.length > 1 && preps.has(words[0].toLowerCase())) {
+      words[1] = words[1].charAt(0).toUpperCase() + words[1].slice(1);
+    }
+    return words.join(' ');
+  };
+
+  // Strategy 0: Bezrealitky "__StreetName, Praha__" title format
   if (!addressFound) {
-    const prepMatch = cleaned.match(new RegExp(
-      `((?:Na|U|Pod|Nad|K|V|Za|Ke|Při)\\s+[${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)*)(?:\\s+(\\d{1,4}(?:\\/\\d+)?))?`, 'i'
-    ));
-    if (prepMatch) {
-      const fullAddr = prepMatch[2] ? `${prepMatch[1]} ${prepMatch[2]}` : prepMatch[1];
-      addressFound = recordMatch('ADDRESS', fullAddr, prepMatch);
+    const m = cleaned.match(/__([^_,]+),\s*Praha/);
+    if (m && m[1].trim().length > 1 && m[1].trim().length < 50) {
+      addressFound = recordMatch('ADDRESS', capitalizeStreet(m[1].trim()), m);
     }
   }
-  
-  // Strategy 3: "nábřeží/náměstí/třída" street types — "Bubenské nábřeží 866/11"
+
+  // Strategy 1: Title line — "NN m² StreetName, Praha" or "bez realitkyStreetName, Praha"
+  if (!addressFound) {
+    const titlePats = [
+      new RegExp(`bez\\s*realitky\\s*([${CZ_UPPER}][${CZ_LETTER}]*(?:\\s+[${CZ_LETTER}]+)*?)\\s*,\\s*Praha`, 'i'),
+      new RegExp(`m[²2]\\s+([${CZ_UPPER}][${CZ_LETTER}]*(?:\\s+[${CZ_LETTER}]+)*?)\\s*,\\s*Praha`, 'i'),
+    ];
+    for (const pat of titlePats) {
+      const m = cleaned.match(pat);
+      if (m && m[1].trim().length > 1) {
+        addressFound = recordMatch('ADDRESS', capitalizeStreet(m[1].trim()), m);
+        if (addressFound) break;
+      }
+    }
+  }
+
+  // Strategy 2: "ulice/ulici" + street name + optional house number
+  if (!addressFound) {
+    const ulMatch = cleaned.match(new RegExp(
+      `(?:ulice|ulici|ul\\.?)\\s+([${CZ_UPPER}][${CZ_LETTER}]*(?:\\s+[${CZ_LETTER}]+)*)(?:\\s+(\\d{1,4}(?:\\/\\d+)?))?`, 'i'
+    ));
+    if (ulMatch) {
+      const fullAddr = ulMatch[2] ? `${ulMatch[1]} ${ulMatch[2]}` : ulMatch[1];
+      addressFound = recordMatch('ADDRESS', capitalizeStreet(fullAddr), ulMatch);
+    }
+  }
+
+  // Strategy 3: "v lokalitě StreetName" — genitive names like "Dukelských hrdinů"
+  if (!addressFound) {
+    const lokMatch = cleaned.match(new RegExp(
+      `lokalitě\\s+([${CZ_UPPER}][${CZ_LETTER}]*(?:\\s+[${CZ_LETTER}]+)*?)(?=\\s+(?:v|na|u|ve|blízko|vedle|nedaleko)\\s|\\s*[,.()])`, 'i'
+    ));
+    if (lokMatch && lokMatch[1].trim().length > 2) {
+      addressFound = recordMatch('ADDRESS', capitalizeStreet(lokMatch[1].trim()), lokMatch);
+    }
+  }
+
+  // Strategy 4: "nábřeží/náměstí/třída" street types — "Bubenské nábřeží 866/11"
   if (!addressFound) {
     const typeMatch = cleaned.match(new RegExp(
       `([${CZ_UPPER}][${CZ_LOWER}]+(?:[${CZ_LOWER}]é|[${CZ_LOWER}]á|[${CZ_LOWER}]o))\\s+(nábřeží|náměstí|třída|bulvár)(?:\\s+(\\d{1,4}(?:\\/\\d+)?))?`, 'i'
@@ -294,44 +332,34 @@ export function parseListingTextWithSources(text) {
       addressFound = recordMatch('ADDRESS', fullAddr, typeMatch);
     }
   }
-  
-  // Strategy 4: Czech street suffix + house number — "Veletržní 12", "Dělnická 347/5"
-  // Common Czech adjective endings used for streets
+
+  // Strategy 5: Prepositional streets with house number (high confidence) — "V Háji 35"
+  if (!addressFound) {
+    const prepMatch = cleaned.match(new RegExp(
+      `((?:Na|U|Pod|Nad|K|V|Za|Ke|Při)\\s+[${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)?)\\s+(\\d{1,4}(?:\\/\\d+)?)`, ''
+    ));
+    if (prepMatch) {
+      const afterNum = cleaned.slice(cleaned.indexOf(prepMatch[0]) + prepMatch[0].length, cleaned.indexOf(prepMatch[0]) + prepMatch[0].length + 15);
+      if (!/^\s*(m[²2]|m\b|patro|patře|podlaží|np|kč|czk|%|\+)/i.test(afterNum)) {
+        addressFound = recordMatch('ADDRESS', `${capitalizeStreet(prepMatch[1])} ${prepMatch[2]}`, prepMatch);
+      }
+    }
+  }
+
+  // Strategy 6: Czech street suffix + house number — "Veletržní 12", "Dělnická 347/5"
   if (!addressFound) {
     const suffixMatch = cleaned.match(new RegExp(
-      `([${CZ_UPPER}][${CZ_LOWER}]*(?:ní|ská|ské|ského|ová|ovo|ovy|ova|ná|né|ného|cká|cké|ckého|ská|ího|čka|ova|ova))\\s+(\\d{1,4}(?:\\/\\d+)?)`, ''
+      `([${CZ_UPPER}][${CZ_LOWER}]*(?:ní|ská|ské|ského|ová|ovo|ovy|ova|ná|né|ného|cká|cké|ckého|ího|čka))\\s+(\\d{1,4}(?:\\/\\d+)?)`, ''
     ));
     if (suffixMatch) {
-      // Exclude false positives: floor patterns like "2. patro", size like "74 m²"
       const afterNum = cleaned.slice(cleaned.indexOf(suffixMatch[0]) + suffixMatch[0].length, cleaned.indexOf(suffixMatch[0]) + suffixMatch[0].length + 15);
-      if (!/^\s*(m²|m\b|patro|podlaží|np|kč|czk)/i.test(afterNum)) {
+      if (!/^\s*(m[²2]|m\b|patro|patře|podlaží|np|kč|czk|%|\+)/i.test(afterNum)) {
         addressFound = recordMatch('ADDRESS', `${suffixMatch[1]} ${suffixMatch[2]}`, suffixMatch);
       }
     }
   }
-  
-  // Strategy 5: "ulice"/"ul." prefix (original pattern, broadened)
-  if (!addressFound) {
-    const ulMatch = cleaned.match(new RegExp(
-      `(?:ulice|ul\\.?)\\s*:?\\s*([${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)*)(?:\\s+(\\d{1,4}(?:\\/\\d+)?))?`, 'i'
-    ));
-    if (ulMatch) {
-      const fullAddr = ulMatch[2] ? `${ulMatch[1]} ${ulMatch[2]}` : ulMatch[1];
-      addressFound = recordMatch('ADDRESS', fullAddr, ulMatch);
-    }
-  }
-  
-  // Strategy 6: "adresa:" label  
-  if (!addressFound) {
-    const adresaMatch = cleaned.match(new RegExp(
-      `adresa\\s*:?\\s*([${CZ_UPPER}][${CZ_LETTER}]+(?:\\s+[${CZ_LETTER}]+)*(?:\\s+\\d{1,4}(?:\\/\\d+)?)?)`, 'i'
-    ));
-    if (adresaMatch) {
-      addressFound = recordMatch('ADDRESS', adresaMatch[1].trim(), adresaMatch);
-    }
-  }
-  
-  // Strategy 7: Czech street name (recognized suffix) standing alone near a comma or Praha
+
+  // Strategy 7: Czech street suffix standalone before ", Praha"
   if (!addressFound) {
     const standaloneMatch = cleaned.match(new RegExp(
       `([${CZ_UPPER}][${CZ_LOWER}]*(?:ní|ská|ské|ová|ovo|ova|ná|né|cká|cké))\\s*,\\s*(?:Praha|${values.LOCATION || '(?!)'})`, 'i'
@@ -340,8 +368,18 @@ export function parseListingTextWithSources(text) {
       addressFound = recordMatch('ADDRESS', standaloneMatch[1], standaloneMatch);
     }
   }
-  
-  // Strategy 8: Generic "CapitalWord NUMBER, Praha" 
+
+  // Strategy 8: "adresa:" label
+  if (!addressFound) {
+    const adresaMatch = cleaned.match(new RegExp(
+      `adresa\\s*:?\\s*([${CZ_UPPER}][${CZ_LETTER}]+(?:\\s+[${CZ_LETTER}]+)*(?:\\s+\\d{1,4}(?:\\/\\d+)?)?)`, 'i'
+    ));
+    if (adresaMatch) {
+      addressFound = recordMatch('ADDRESS', capitalizeStreet(adresaMatch[1].trim()), adresaMatch);
+    }
+  }
+
+  // Strategy 9: Generic "CapitalWord NUMBER, Praha"
   if (!addressFound) {
     const genericMatch = cleaned.match(new RegExp(
       `([${CZ_UPPER}][${CZ_LOWER}]+(?:\\s+[${CZ_LOWER}]+)?)\\s+(\\d{1,4}(?:\\/\\d+)?)\\s*,\\s*(?:Praha|${values.LOCATION || '(?!)'})`, 'i'
@@ -350,7 +388,20 @@ export function parseListingTextWithSources(text) {
       addressFound = recordMatch('ADDRESS', `${genericMatch[1]} ${genericMatch[2]}`, genericMatch);
     }
   }
-  
+
+  // Post-processing: if address found without house number, look for one in text
+  if (addressFound && !/\d/.test(values.ADDRESS)) {
+    const escaped = values.ADDRESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const numSearch = cleaned.match(new RegExp(escaped + '\\s+(\\d{1,4}(?:\\/\\d+)?)', 'i'));
+    if (numSearch) {
+      const afterStr = cleaned.slice(numSearch.index + numSearch[0].length, numSearch.index + numSearch[0].length + 15);
+      if (!/^\s*(m[²2]|m\b|patro|patře|podlaží|np|kč|czk|%|\+)/i.test(afterStr)) {
+        values.ADDRESS = `${values.ADDRESS} ${numSearch[1]}`;
+        if (sources.ADDRESS) sources.ADDRESS = { start: numSearch.index, end: numSearch.index + numSearch[0].length, text: numSearch[0] };
+      }
+    }
+  }
+
   // Fallback: use Location
   if (!addressFound && values.LOCATION) {
     values.ADDRESS = values.LOCATION;
