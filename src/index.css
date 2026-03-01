@@ -49,6 +49,17 @@ input[type="range"]::-moz-range-thumb {
   touch-action: manipulation;
 }
 
+/* Prevent iOS Safari auto-zoom on input focus.
+   Safari zooms in whenever a focused input has font-size < 16px.
+   This rule overrides Tailwind's text-sm/text-xs on mobile. */
+@media (max-width: 768px) {
+  input:not([type="range"]):not([type="color"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Remove iOS/Android tap highlight flash */
 button, a, [role="button"] {
   -webkit-tap-highlight-color: transparent;
