@@ -1462,23 +1462,6 @@ export default function FlatOfferAnalyzer() {
   const currentOffer = useMemo(() => offers.find(o => o.id === currentOfferId), [offers, currentOfferId]);
   const starredOffers = useMemo(() => offers.filter(o => o.featured && (showSoldInGraph || !o.sold)), [offers, showSoldInGraph]);
 
-  // During scrubbing, chart shows ALL offers (including hidden/sold) so user can scrub through them
-  const activeChartOffers = useMemo(() =>
-    isScrubbing ? allOffersFlat : starredOffers,
-    [isScrubbing, allOffersFlat, starredOffers]);
-
-  const chartData = useMemo(() => {
-    return ALL_PARAMS.filter(p => enabledParams[p]).map(param => {
-      const point = { param };
-      activeChartOffers.forEach(offer => {
-        point[offer.id] = OBJECTIVE_PARAMS.includes(param)
-          ? getNormalizedValue(param, offer, parameterRanges)
-          : (offer.subjectiveRatings?.[param] ?? 5);
-      });
-      return point;
-    });
-  }, [activeChartOffers, enabledParams, parameterRanges]);
-
   const processedOffers = useMemo(() => {
     const activeOffers = offers.filter(o => !o.sold);
     const soldOffers = offers.filter(o => o.sold);
@@ -1552,6 +1535,23 @@ export default function FlatOfferAnalyzer() {
     processedOffers.forEach(g => { g.offers.forEach(o => result.push(o)); });
     return result;
   }, [processedOffers]);
+
+  // During scrubbing, chart shows ALL offers (including hidden/sold) so user can scrub through them
+  const activeChartOffers = useMemo(() =>
+    isScrubbing ? allOffersFlat : starredOffers,
+    [isScrubbing, allOffersFlat, starredOffers]);
+
+  const chartData = useMemo(() => {
+    return ALL_PARAMS.filter(p => enabledParams[p]).map(param => {
+      const point = { param };
+      activeChartOffers.forEach(offer => {
+        point[offer.id] = OBJECTIVE_PARAMS.includes(param)
+          ? getNormalizedValue(param, offer, parameterRanges)
+          : (offer.subjectiveRatings?.[param] ?? 5);
+      });
+      return point;
+    });
+  }, [activeChartOffers, enabledParams, parameterRanges]);
 
   // Keep refs current for the scrub effect closure
   useEffect(() => { allOffersRef.current = allOffersFlat; }, [allOffersFlat]);
