@@ -56,7 +56,7 @@ const T = {
     link: 'Odkaz', markSold: 'Označit jako prodané', soldLabel: 'Prodané',
     edit: 'Upravit', email: 'E-mail', photo: 'Fotka',
     // Chart
-    starOffersHint: 'Označte nabídky hvězdičkou pro porovnání',
+    starOffersHint: 'Zobrazte nabídky okem pro porovnání na grafu',
     autoButton: 'Auto', rangesButton: 'Rozsahy', rangesTitle: 'Rozsahy',
     // Shared modal actions
     cancel: 'Zrušit', save: 'Uložit', add: 'Přidat', remove: 'Odebrat',
@@ -129,7 +129,7 @@ const T = {
     selectOffer: 'Select an offer from the list', goToList: 'Go to list',
     link: 'Link', markSold: 'Mark Sold', soldLabel: 'Sold',
     edit: 'Edit', email: 'Email', photo: 'Photo',
-    starOffersHint: 'Star offers to compare them here',
+    starOffersHint: 'Show offers on chart using the eye icon',
     autoButton: 'Auto', rangesButton: 'Ranges', rangesTitle: 'Ranges',
     cancel: 'Cancel', save: 'Save', add: 'Add', remove: 'Remove',
     close: '✕', colors: 'Color',
@@ -318,7 +318,7 @@ const CustomTooltip = ({ active, payload, label, starredOffers }) => {
   );
 };
 
-function ZoomableChart({ children }) {
+function ZoomableChart({ children, onBackgroundClick, onGestureChange }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -329,35 +329,64 @@ function ZoomableChart({ children }) {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const panRef = useRef({ x: 0, y: 0 });
   const zoomRef = useRef(1);
+  const hasDraggedRef = useRef(false);
+  const isGesturingRef = useRef(false);
+  const touchStartTimeRef = useRef(0);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
+
+  const notifyGesture = (active) => {
+    if (isGesturingRef.current !== active) {
+      isGesturingRef.current = active;
+      onGestureChange?.(active);
+    }
+  };
 
   const handleWheel = (e) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     setZoom(z => Math.max(0.5, Math.min(3, z * delta)));
+    notifyGesture(true);
+    // Clear gesturing state shortly after wheel stops
+    clearTimeout(handleWheel._timer);
+    handleWheel._timer = setTimeout(() => notifyGesture(false), 150);
   };
 
   const handleMouseDown = (e) => {
     if (e.button !== 0) return;
+    hasDraggedRef.current = false;
     setIsDragging(true);
+    notifyGesture(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
 
   const handleMouseMove = (e) => {
     if (!isDragging) return;
+    hasDraggedRef.current = true;
     setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
 
-  const handleMouseUp = () => setIsDragging(false);
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    notifyGesture(false);
+    if (!hasDraggedRef.current) {
+      onBackgroundClick?.();
+    }
+  };
+
   const handleDoubleClick = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
   // Touch handlers for pinch-zoom and single-finger pan
   const handleTouchStart = (e) => {
+    hasDraggedRef.current = false;
+    touchStartTimeRef.current = Date.now();
     if (e.touches.length === 2) {
       e.stopPropagation(); // Always capture pinch — never let tab swipe handler see it
+      notifyGesture(true);
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       lastTouchDistRef.current = Math.hypot(dx, dy);
     } else if (e.touches.length === 1) {
+      touchStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       if (zoomRef.current > 1) e.stopPropagation(); // Capture single-finger pan when zoomed in
       isDraggingRef.current = true;
       dragStartRef.current = { x: e.touches[0].clientX - panRef.current.x, y: e.touches[0].clientY - panRef.current.y };
@@ -365,6 +394,8 @@ function ZoomableChart({ children }) {
   };
 
   const handleTouchMove = (e) => {
+    hasDraggedRef.current = true;
+    notifyGesture(true);
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -384,9 +415,15 @@ function ZoomableChart({ children }) {
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e) => {
     isDraggingRef.current = false;
     lastTouchDistRef.current = null;
+    notifyGesture(false);
+    // Quick tap with no movement = background click
+    const dt = Date.now() - touchStartTimeRef.current;
+    if (!hasDraggedRef.current && dt < 250 && e.changedTouches.length === 1) {
+      onBackgroundClick?.();
+    }
   };
 
   // Register non-passive touchmove so we can preventDefault on pinch and zoomed-pan
@@ -1224,6 +1261,10 @@ export default function FlatOfferAnalyzer() {
   const [miniTooltip, setMiniTooltip] = useState(null);
   const miniTooltipTimerRef = useRef(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
+  const [isChartGesturing, setIsChartGesturing] = useState(false);
+  const scrubModeRef = useRef(false);
+  const allOffersRef = useRef([]);
+  const miniStarredItemsRef = useRef([]);
 
   // Resizable panels
   const [listWidth, setListWidth] = useState(400);
@@ -1421,17 +1462,22 @@ export default function FlatOfferAnalyzer() {
   const currentOffer = useMemo(() => offers.find(o => o.id === currentOfferId), [offers, currentOfferId]);
   const starredOffers = useMemo(() => offers.filter(o => o.featured && (showSoldInGraph || !o.sold)), [offers, showSoldInGraph]);
 
+  // During scrubbing, chart shows ALL offers (including hidden/sold) so user can scrub through them
+  const activeChartOffers = useMemo(() =>
+    isScrubbing ? allOffersFlat : starredOffers,
+    [isScrubbing, allOffersFlat, starredOffers]);
+
   const chartData = useMemo(() => {
     return ALL_PARAMS.filter(p => enabledParams[p]).map(param => {
       const point = { param };
-      starredOffers.forEach(offer => {
+      activeChartOffers.forEach(offer => {
         point[offer.id] = OBJECTIVE_PARAMS.includes(param)
           ? getNormalizedValue(param, offer, parameterRanges)
           : (offer.subjectiveRatings?.[param] ?? 5);
       });
       return point;
     });
-  }, [starredOffers, enabledParams, parameterRanges]);
+  }, [activeChartOffers, enabledParams, parameterRanges]);
 
   const processedOffers = useMemo(() => {
     const activeOffers = offers.filter(o => !o.sold);
@@ -1499,6 +1545,17 @@ export default function FlatOfferAnalyzer() {
     processedOffers.forEach(g => { g.offers.forEach(o => { if (o.featured) result.push(o); }); });
     return result;
   }, [processedOffers]);
+
+  // All offers flat (for scrubbing — includes hidden and sold)
+  const allOffersFlat = useMemo(() => {
+    const result = [];
+    processedOffers.forEach(g => { g.offers.forEach(o => result.push(o)); });
+    return result;
+  }, [processedOffers]);
+
+  // Keep refs current for the scrub effect closure
+  useEffect(() => { allOffersRef.current = allOffersFlat; }, [allOffersFlat]);
+  useEffect(() => { miniStarredItemsRef.current = miniStarredItems; }, [miniStarredItems]);
 
   // Actions
   const addOffer = useCallback((data) => {
@@ -1821,8 +1878,14 @@ export default function FlatOfferAnalyzer() {
                 </LinkTooltip>
               )
             )}
-            <button onClick={(e) => { e.stopPropagation(); toggleStar(offer.id); if (navigator.vibrate) navigator.vibrate(10); }} className={`${isMobile ? 'p-2' : 'p-1'} ${offer.featured ? 'text-yellow-500' : 'text-gray-300 hover:text-gray-400'}`}>
-              <svg className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+            <button onClick={(e) => { e.stopPropagation(); toggleStar(offer.id); if (navigator.vibrate) navigator.vibrate(10); }} className={`${isMobile ? 'p-2' : 'p-1'} ${offer.featured ? 'text-gray-700' : 'text-gray-300 hover:text-gray-500'}`} title={offer.featured ? 'Hide from chart' : 'Show on chart'}>
+              <svg className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {offer.featured ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                )}
+              </svg>
             </button>
             <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(offer); }} className={`${isMobile ? 'p-2' : 'p-1'} text-gray-400 hover:text-red-500`}>
               <svg className={isMobile ? 'w-5 h-5' : 'w-4 h-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -1943,12 +2006,14 @@ export default function FlatOfferAnalyzer() {
     const EDGE_ZONE = 50;   // px from edge to start auto-scroll
 
     const getOfferAtY = (clientY) => {
+      // Use all offers when scrubbing (allows selecting hidden/sold), starred otherwise
+      const list = scrubModeRef.current ? allOffersRef.current : miniStarredItemsRef.current;
       const rect = miniList.getBoundingClientRect();
       const localY = clientY - rect.top + miniList.scrollTop;
       const idx = Math.floor((localY - TOP_PAD) / ITEM_STRIDE);
-      if (idx >= 0 && idx < miniStarredItems.length) {
+      if (idx >= 0 && idx < list.length) {
         const itemTop = TOP_PAD + idx * ITEM_STRIDE;
-        if (localY < itemTop + ITEM_HEIGHT) return { offer: miniStarredItems[idx], idx };
+        if (localY < itemTop + ITEM_HEIGHT) return { offer: list[idx], idx };
       }
       return null;
     };
@@ -1968,6 +2033,7 @@ export default function FlatOfferAnalyzer() {
       scrub.timerId = setTimeout(() => {
         if (scrub.state !== 'holding') return;
         scrub.state = 'scrubbing';
+        scrubModeRef.current = true; // set before getOfferAtY so ref-based hit-test uses all offers
         setIsScrubbing(true);
         if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
         const hit = getOfferAtY(touch.clientY);
@@ -2047,6 +2113,7 @@ export default function FlatOfferAnalyzer() {
         miniInertiaRAFRef.current = requestAnimationFrame(applyInertia);
       }
       if (scrub.state === 'scrubbing') {
+        scrubModeRef.current = false;
         setIsScrubbing(false);
         if (miniTooltipTimerRef.current) clearTimeout(miniTooltipTimerRef.current);
         miniTooltipTimerRef.current = setTimeout(() => setMiniTooltip(null), 1000);
@@ -2057,6 +2124,7 @@ export default function FlatOfferAnalyzer() {
 
     const onTouchCancel = () => {
       if (miniInertiaRAFRef.current) { cancelAnimationFrame(miniInertiaRAFRef.current); miniInertiaRAFRef.current = null; }
+      scrubModeRef.current = false;
       setIsScrubbing(false);
       scrub.state = 'idle';
       clearTimeout(scrub.timerId);
@@ -2076,7 +2144,7 @@ export default function FlatOfferAnalyzer() {
       if (miniInertiaRAFRef.current) { cancelAnimationFrame(miniInertiaRAFRef.current); miniInertiaRAFRef.current = null; }
       setIsScrubbing(false);
     };
-  }, [isMobile, miniStarredItems, handleMiniItemTap]);
+  }, [isMobile, handleMiniItemTap]); // refs (allOffersRef, miniStarredItemsRef, scrubModeRef) stay stable
 
   // Keep active offer's bar visible in the mini-list when selection changes
   useEffect(() => {
@@ -2245,30 +2313,33 @@ export default function FlatOfferAnalyzer() {
               </div>
 
               <div className="flex-grow relative">
-                {starredOffers.length === 0 ? (
+                {activeChartOffers.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-gray-400 text-sm p-8 text-center">{t('starOffersHint')}</div>
                 ) : (
-                  <ZoomableChart>
+                  <ZoomableChart
+                    onBackgroundClick={() => setCurrentOfferId(null)}
+                    onGestureChange={setIsChartGesturing}
+                  >
                     <ResponsiveContainer width="100%" height="100%">
                       <RadarChart data={chartData} cx="50%" cy="50%" outerRadius="60%">
                         <PolarGrid stroke="#E5E7EB" />
                         <PolarAngleAxis dataKey="param" tick={{ fill: '#6B7280', fontSize: 9 }} />
                         <PolarRadiusAxis angle={90} domain={[0, 10]} tick={{ fill: '#9CA3AF', fontSize: 8 }} />
-                        {starredOffers.map(offer => {
+                        {activeChartOffers.map(offer => {
                           const isHighlighted = offer.id === hoveredOfferId || offer.id === currentOfferId;
                           const isDimmed = (hoveredOfferId || currentOfferId) && !isHighlighted;
                           const noSelection = !hoveredOfferId && !currentOfferId;
                           return (
                             <Radar key={offer.id} name={offer.name} dataKey={offer.id} stroke={offer.color}
                               fill={offer.color}
-                              fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.03 : noSelection ? 0.08 : 0.15}
+                              fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.03 : noSelection ? 0.10 : 0.15}
                               strokeOpacity={isDimmed ? 0.3 : 1}
-                              strokeWidth={isHighlighted ? 3 : noSelection ? 2.5 : 2}
+                              strokeWidth={isHighlighted ? 3 : noSelection ? 2.0 : 2}
                               isAnimationActive={false}
                             />
                           );
                         })}
-                        <Tooltip content={<CustomTooltip starredOffers={starredOffers} />} />
+                        {!isChartGesturing && <Tooltip content={<CustomTooltip starredOffers={activeChartOffers} />} />}
                       </RadarChart>
                     </ResponsiveContainer>
                   </ZoomableChart>
@@ -2336,7 +2407,7 @@ export default function FlatOfferAnalyzer() {
             }}
           >
             <div className="py-2 space-y-1 flex flex-col items-end">
-              {miniStarredItems.map((offer) => {
+              {(isScrubbing ? allOffersFlat : miniStarredItems).map((offer) => {
                 const isActive = offer.id === currentOfferId;
                 const isScrubTarget = isScrubbing && isActive;
                 return (
@@ -2347,7 +2418,7 @@ export default function FlatOfferAnalyzer() {
                       height: 48,
                       width: isScrubTarget ? 22 : 10,
                       backgroundColor: offer.color,
-                      opacity: offer.sold ? 0.4 : 1,
+                      opacity: offer.sold ? 0.4 : (!isScrubbing && !offer.featured) ? 0.3 : 1,
                       borderRadius: '5px 0px 0px 5px',
                       outline: isActive && !isScrubbing ? '2px solid #3B82F6' : 'none',
                       outlineOffset: 1,
@@ -2658,18 +2729,21 @@ export default function FlatOfferAnalyzer() {
             </div>
           </div>
 
-          <div className="flex-grow relative" onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }}>
-            {starredOffers.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-gray-400 text-sm">Star offers to compare</div>
+          <div className="flex-grow relative">
+            {activeChartOffers.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-gray-400 text-sm">Show offers on chart with the eye icon</div>
             ) : (
               <>
-                <ZoomableChart>
+                <ZoomableChart
+                  onBackgroundClick={() => setCurrentOfferId(null)}
+                  onGestureChange={setIsChartGesturing}
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart data={chartData} cx="50%" cy="50%" outerRadius="70%">
                       <PolarGrid stroke="#E5E7EB" />
                       <PolarAngleAxis dataKey="param" tick={{ fill: '#6B7280', fontSize: 10 }} />
                       <PolarRadiusAxis angle={90} domain={[0, 10]} tick={{ fill: '#9CA3AF', fontSize: 9 }} />
-                      {starredOffers.map(offer => {
+                      {activeChartOffers.map(offer => {
                         const isHighlighted = offer.id === hoveredOfferId || offer.id === currentOfferId;
                         const isDimmed = (hoveredOfferId || currentOfferId) && !isHighlighted;
                         const noSelection = !hoveredOfferId && !currentOfferId;
@@ -2680,14 +2754,14 @@ export default function FlatOfferAnalyzer() {
                             dataKey={offer.id}
                             stroke={offer.color}
                             fill={offer.color}
-                            fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.03 : noSelection ? 0.08 : 0.15}
+                            fillOpacity={isHighlighted ? 0.35 : isDimmed ? 0.03 : noSelection ? 0.10 : 0.15}
                             strokeOpacity={isDimmed ? 0.3 : 1}
-                            strokeWidth={isHighlighted ? 3 : noSelection ? 2.5 : 2}
+                            strokeWidth={isHighlighted ? 3 : noSelection ? 2.0 : 2}
                             isAnimationActive={false}
                           />
                         );
                       })}
-                      <Tooltip content={<CustomTooltip starredOffers={starredOffers} />} />
+                      {!isChartGesturing && <Tooltip content={<CustomTooltip starredOffers={activeChartOffers} />} />}
                     </RadarChart>
                   </ResponsiveContainer>
                 </ZoomableChart>
