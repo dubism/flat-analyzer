@@ -742,22 +742,64 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
 // ADD OFFER MODAL
 // ============================================================================
 
-function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
+function AddOfferModal({ onClose, onAdd, existingOffers, palette, isMobile }) {
   const [selectedColor, setSelectedColor] = useState(getNextColor(existingOffers, palette));
   const [urlInput, setUrlInput] = useState('');
   const [pasteText, setPasteText] = useState('');
   const [extractionPhase, setExtractionPhase] = useState('input'); // 'input' | 'extracted'
-  
+
   // Extraction result
   const [result, setResult] = useState(null); // { values, sources }
-  
+
   // User edits (survive re-analysis)
   const [userEdits, setUserEdits] = useState({});
-  
+
+  // Photo state
+  const [offerImage, setOfferImage] = useState(null);
+  const photoFileInputRef = useRef(null);
+
   // Hover state for source highlighting
   const [hoveredField, setHoveredField] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const textareaRef = useRef(null);
+  const urlInputRef = useRef(null);
+
+  // Auto-focus URL input on mount
+  useEffect(() => {
+    setTimeout(() => urlInputRef.current?.focus(), 100);
+  }, []);
+
+  // Compress image helper (same as ImagePasteModal)
+  const compressImage = (dataUrl) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_W = 800;
+        const scale = img.width > MAX_W ? MAX_W / img.width : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
+  const handlePhotoFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file?.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const compressed = await compressImage(ev.target.result);
+        setOfferImage(compressed);
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  };
   
   const getFieldValue = (field) => {
     if (userEdits[field] !== undefined) return userEdits[field];
@@ -825,7 +867,7 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
     });
     
     const name = getFieldValue('name') || `Offer ${existingOffers.length + 1}`;
-    onAdd({ name, data, color: selectedColor, subjectiveRatings: subjective });
+    onAdd({ name, data, color: selectedColor, subjectiveRatings: subjective, image: offerImage });
   };
 
   const OBJECTIVE_FIELDS = [
@@ -871,6 +913,7 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
           <div className="mb-3">
             <label className="block text-xs font-medium text-gray-700 mb-1">{t('listingUrlLabel')}</label>
             <input
+              ref={urlInputRef}
               type="url"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
@@ -984,6 +1027,29 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette }) {
                   })}
                 </div>
               </div>
+              {/* Photo (optional) */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{t('photo')}</h3>
+                {offerImage ? (
+                  <div className="relative w-full aspect-[4/3] overflow-hidden rounded-lg cursor-pointer group" onClick={() => photoFileInputRef.current?.click()}>
+                    <img src={offerImage} alt="" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); setOfferImage(null); }} className="absolute top-1 right-1 p-1 bg-black/50 hover:bg-black/70 rounded-full text-white text-xs leading-none">✕</button>
+                  </div>
+                ) : (
+                  <div
+                    className="w-full aspect-[4/3] rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 flex flex-col items-center justify-center border-2 border-dashed border-gray-300"
+                    onClick={() => photoFileInputRef.current?.click()}
+                  >
+                    <svg className="w-8 h-8 text-gray-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <span className="text-xs text-gray-500">{t('photoPasteHint')}</span>
+                  </div>
+                )}
+                <input ref={photoFileInputRef} type="file" accept="image/*" onChange={handlePhotoFileChange} className="hidden" />
+              </div>
+
               {/* Cursor-following source tooltip */}
               {hoveredField && highlightInfo && (
                 <div
@@ -1242,6 +1308,8 @@ export default function FlatOfferAnalyzer() {
   const [editingOffer, setEditingOffer] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [imagePasteTarget, setImagePasteTarget] = useState(null);
+  const mobilePhotoInputRef = useRef(null);
+  const mobilePhotoTargetRef = useRef(null);
   const [showRangePopup, setShowRangePopup] = useState(false);
   const [soldCollapsed, setSoldCollapsed] = useState(true);
   const [showSoldInGraph, setShowSoldInGraph] = useState(false);
@@ -1568,7 +1636,7 @@ export default function FlatOfferAnalyzer() {
       notes: '',
       featured: true,
       manualOrder: offers.length,
-      image: null,
+      image: data.image || null,
       sold: false,
       updatedAt: Date.now(),
     };
@@ -1580,6 +1648,48 @@ export default function FlatOfferAnalyzer() {
   const updateOffer = useCallback((id, updates) => {
     setOffers(prev => prev.map(o => o.id === id ? { ...o, ...updates, updatedAt: Date.now() } : o));
   }, []);
+
+  // On mobile, skip the ImagePasteModal and go straight to OS file picker
+  const openPhotoForOffer = useCallback((offerId) => {
+    if (isMobile) {
+      mobilePhotoTargetRef.current = offerId;
+      mobilePhotoInputRef.current?.click();
+    } else {
+      setImagePasteTarget(offerId);
+    }
+  }, [isMobile]);
+
+  const handleMobilePhotoChange = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (file?.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target.result;
+        const img = new window.Image();
+        img.onload = () => {
+          const MAX_W = 800;
+          const scale = img.width > MAX_W ? MAX_W / img.width : 1;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.7);
+          const targetId = mobilePhotoTargetRef.current;
+          if (targetId) updateOffer(targetId, { image: compressed });
+          mobilePhotoTargetRef.current = null;
+        };
+        img.onerror = () => {
+          const targetId = mobilePhotoTargetRef.current;
+          if (targetId) updateOffer(targetId, { image: dataUrl });
+          mobilePhotoTargetRef.current = null;
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  }, [updateOffer]);
 
   const toggleStar = useCallback((id) => {
     setOffers(prev => prev.map(o => o.id === id ? { ...o, featured: !o.featured, updatedAt: Date.now() } : o));
@@ -2243,9 +2353,16 @@ export default function FlatOfferAnalyzer() {
                     <button onClick={() => setMobileView('list')} className="text-blue-500 text-sm flex-shrink-0 px-1">{t('backToList')}</button>
                   </div>
 
-                  {currentOffer.image && (
-                    <div className="w-full aspect-[16/9] mb-3 overflow-hidden rounded-lg" onClick={() => setImagePasteTarget(currentOffer.id)}>
+                  {currentOffer.image ? (
+                    <div className="w-full aspect-[16/9] mb-3 overflow-hidden rounded-lg cursor-pointer relative group" onClick={() => openPhotoForOffer(currentOffer.id)}>
                       <img src={currentOffer.image} alt="" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full aspect-[16/9] mb-3 rounded-lg cursor-pointer bg-gray-100 hover:bg-gray-200 flex items-center justify-center border-2 border-dashed border-gray-300" onClick={() => openPhotoForOffer(currentOffer.id)}>
+                      <span className="text-xs text-gray-500">+ {t('photo')}</span>
                     </div>
                   )}
 
@@ -2270,7 +2387,6 @@ export default function FlatOfferAnalyzer() {
                     </button>
                     <button onClick={() => { setEditingOffer(currentOffer); setModal('edit'); }} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{t('edit')}</button>
                     <button onClick={() => setModal('email')} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{t('email')}</button>
-                    <button onClick={() => setImagePasteTarget(currentOffer.id)} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{t('photo')}</button>
                     <button onClick={() => { const idx = offers.findIndex(o => o.id === currentOffer.id); if (idx > 0) moveOffer(currentOffer.id, offers[idx - 1].id); }} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">↑</button>
                     <button onClick={() => { const idx = offers.findIndex(o => o.id === currentOffer.id); if (idx < offers.length - 1) moveOffer(currentOffer.id, offers[idx + 1].id); }} className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">↓</button>
                   </div>
@@ -2451,7 +2567,7 @@ export default function FlatOfferAnalyzer() {
         </nav>
 
         {/* Modals */}
-        {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} />}
+        {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} isMobile={isMobile} />}
         {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} palette={palette} />}
         {modal === 'email' && currentOffer && <EmailModal offer={currentOffer} onClose={() => setModal(null)} />}
         {modal === 'palette' && (
@@ -2471,6 +2587,7 @@ export default function FlatOfferAnalyzer() {
             isMobile={isMobile}
           />
         )}
+        <input ref={mobilePhotoInputRef} type="file" accept="image/*" onChange={handleMobilePhotoChange} className="hidden" />
       </div>
     );
   }
@@ -2823,7 +2940,7 @@ export default function FlatOfferAnalyzer() {
       </div>
 
       {/* Modals */}
-      {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} />}
+      {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} isMobile={isMobile} />}
       {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} palette={palette} />}
       {modal === 'email' && currentOffer && <EmailModal offer={currentOffer} onClose={() => setModal(null)} />}
       {modal === 'palette' && (
