@@ -295,10 +295,35 @@ const formatFieldValue = (k, v) => {
   return String(v);
 };
 
-const CustomTooltip = ({ active, payload, label, starredOffers }) => {
+const CustomTooltip = ({ active, payload, label, coordinate, viewBox, starredOffers, outerRadiusFraction }) => {
   if (!active || !payload?.length) return null;
   const param = label;
-  const sortedPayload = [...payload].sort((a, b) => (b.value || 0) - (a.value || 0));
+
+  // Filter to only show entries whose dot is close to the cursor position.
+  // Recharts RadarChart passes coordinate with cx, cy (center) and the
+  // tooltip point x, y. Compute cursor's radial distance from center,
+  // normalize to 0–10 scale, and keep only entries near that value.
+  let filteredPayload = payload;
+  const cx = coordinate?.cx;
+  const cy = coordinate?.cy;
+  if (coordinate && cx != null && cy != null && viewBox) {
+    const dx = coordinate.x - cx;
+    const dy = coordinate.y - cy;
+    const cursorDist = Math.sqrt(dx * dx + dy * dy);
+    // Compute the outer radius in pixels from chart dimensions
+    const radiusFrac = outerRadiusFraction || 0.6;
+    const chartW = viewBox.width || (viewBox.innerRadius ? 0 : 300);
+    const chartH = viewBox.height || chartW;
+    const outerRadius = radiusFrac * Math.min(chartW, chartH) / 2;
+    const cursorValue = outerRadius > 0 ? (cursorDist / outerRadius) * 10 : 0;
+    // Keep entries within 1.0 normalized units of the cursor position
+    const threshold = 1.0;
+    const nearby = payload.filter(entry => Math.abs((entry.value || 0) - cursorValue) <= threshold);
+    if (nearby.length > 0) filteredPayload = nearby;
+    else return null; // nothing close enough — hide tooltip
+  }
+
+  const sortedPayload = [...filteredPayload].sort((a, b) => (b.value || 0) - (a.value || 0));
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs max-w-xs">
       <div className="font-medium text-gray-700 mb-1">{param}</div>
@@ -371,6 +396,11 @@ function ZoomableChart({ children, onBackgroundClick, onGestureChange }) {
     if (!hasDraggedRef.current) {
       onBackgroundClick?.();
     }
+  };
+
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+    notifyGesture(false);
   };
 
   const handleDoubleClick = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
@@ -450,7 +480,7 @@ function ZoomableChart({ children, onBackgroundClick, onGestureChange }) {
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       onDoubleClick={handleDoubleClick}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -2455,7 +2485,7 @@ export default function FlatOfferAnalyzer() {
                             />
                           );
                         })}
-                        {!isChartGesturing && <Tooltip content={<CustomTooltip starredOffers={activeChartOffers} />} />}
+                        {!isChartGesturing && <Tooltip content={<CustomTooltip starredOffers={activeChartOffers} outerRadiusFraction={0.6} />} />}
                       </RadarChart>
                     </ResponsiveContainer>
                   </ZoomableChart>
@@ -2878,7 +2908,7 @@ export default function FlatOfferAnalyzer() {
                           />
                         );
                       })}
-                      {!isChartGesturing && <Tooltip content={<CustomTooltip starredOffers={activeChartOffers} />} />}
+                      {!isChartGesturing && <Tooltip content={<CustomTooltip starredOffers={activeChartOffers} outerRadiusFraction={0.7} />} />}
                     </RadarChart>
                   </ResponsiveContainer>
                 </ZoomableChart>
