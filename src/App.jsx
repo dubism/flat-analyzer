@@ -2048,6 +2048,13 @@ export default function FlatOfferAnalyzer() {
   // prevMobileViewRef lets the mobileView-change effect skip when gesture already handled animation
   const prevMobileViewRef = useRef(mobileView);
 
+  // Subjective slider lock/unlock — tracks which single slider is currently "activated" on mobile.
+  // First tap on a locked slider unlocks it (visual cue); only then horizontal drag works.
+  // This prevents accidental tab-swipe when the user tries to adjust a rating slider.
+  const activeSliderRef = useRef(null); // { offerId, param } | null
+  const [activeSlider, setActiveSlider] = useState(null);
+  const sliderLockTimerRef = useRef(null);
+
   // Keep mobileViewRef current
   useEffect(() => { mobileViewRef.current = mobileView; }, [mobileView]);
 
@@ -2071,6 +2078,38 @@ export default function FlatOfferAnalyzer() {
 
     const onTouchStart = (e) => {
       if (e.touches.length !== 1) return;
+
+      // If the touch lands on a subjective-rating range input, handle the
+      // lock/unlock cycle and suppress tab-swipe for this entire gesture.
+      const target = e.target;
+      if (target.type === 'range' && target.dataset.offerId) {
+        const { offerId, param } = target.dataset;
+        const cur = activeSliderRef.current;
+        const alreadyActive = cur && cur.offerId === offerId && cur.param === param;
+
+        // Block tab navigation regardless of lock state
+        gestureRef.current = {
+          state: 'idle',
+          startX: e.touches[0].clientX,
+          startY: e.touches[0].clientY,
+          startTime: Date.now(),
+          startTabIdx: TAB_ORDER.indexOf(mobileViewRef.current),
+        };
+
+        // Unlock on first tap; reset auto-lock timer on subsequent taps
+        clearTimeout(sliderLockTimerRef.current);
+        if (!alreadyActive) {
+          const next = { offerId, param };
+          activeSliderRef.current = next;
+          setActiveSlider(next);
+        }
+        sliderLockTimerRef.current = setTimeout(() => {
+          activeSliderRef.current = null;
+          setActiveSlider(null);
+        }, 3500);
+        return;
+      }
+
       gestureRef.current = {
         state: 'undecided',
         startX: e.touches[0].clientX,
@@ -2428,17 +2467,38 @@ export default function FlatOfferAnalyzer() {
                     className="w-full p-3 text-sm border border-gray-300 rounded-lg resize-none min-h-[80px] h-20 mb-4"
                   />
 
-                  <div className="border-t pt-3">
-                    <h3 className="text-xs font-medium text-gray-700 mb-2">{t('ratingsSection')}</h3>
-                    {SUBJECTIVE_PARAMS.map(param => (
-                      <div key={param} className="mb-3">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span>{param}</span>
-                          <span className="font-medium">{currentOffer.subjectiveRatings?.[param] ?? 5}</span>
+                  <div className="border-t pt-2">
+                    <h3 className="text-xs font-medium text-gray-700 mb-1">{t('ratingsSection')}</h3>
+                    {SUBJECTIVE_PARAMS.map(param => {
+                      const isActive = activeSlider?.offerId === currentOffer.id && activeSlider?.param === param;
+                      const value = currentOffer.subjectiveRatings?.[param] ?? 5;
+                      return (
+                        <div key={param} className="mb-1.5">
+                          <div className="flex justify-between text-xs mb-0.5">
+                            <span>{param}</span>
+                            <div className="flex items-center gap-1">
+                              {isMobile && !isActive && (
+                                /* Lock icon — tap slider to activate dragging */
+                                <svg className="w-3 h-3 text-gray-300 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                  <path d="M7 11V7a5 5 0 0110 0v4" />
+                                </svg>
+                              )}
+                              <span className="font-medium">{value}</span>
+                            </div>
+                          </div>
+                          <input
+                            type="range" min="0" max="10" step="0.5"
+                            value={value}
+                            onChange={(e) => updateOffer(currentOffer.id, { subjectiveRatings: { ...currentOffer.subjectiveRatings, [param]: parseFloat(e.target.value) } })}
+                            data-offer-id={currentOffer.id}
+                            data-param={param}
+                            className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${isMobile ? (isActive ? 'bg-blue-100 slider-active' : 'bg-gray-200 slider-locked') : 'bg-gray-200'}`}
+                            style={isMobile && isActive ? { touchAction: 'none' } : undefined}
+                          />
                         </div>
-                        <input type="range" min="0" max="10" step="0.5" value={currentOffer.subjectiveRatings?.[param] ?? 5} onChange={(e) => updateOffer(currentOffer.id, { subjectiveRatings: { ...currentOffer.subjectiveRatings, [param]: parseFloat(e.target.value) } })} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
