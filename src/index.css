@@ -81,19 +81,39 @@ button:active {
 .modal-max-h-90 { max-height: 90vh; max-height: 90dvh; }
 .modal-max-h-85 { max-height: 85vh; max-height: 85dvh; }
 
-/* Larger range slider thumb on mobile for easier touch */
+/* Mobile range slider — compact but still finger-friendly */
 @media (max-width: 768px) {
   input[type="range"] {
-    padding: 8px 0;
+    padding: 2px 0;
   }
   input[type="range"]::-webkit-slider-thumb {
-    width: 28px;
-    height: 28px;
-    margin-top: -11px;
+    width: 20px;
+    height: 20px;
+    margin-top: -7px;
+    transition: background-color 200ms, box-shadow 200ms;
   }
   input[type="range"]::-moz-range-thumb {
-    width: 28px;
-    height: 28px;
+    width: 20px;
+    height: 20px;
+    transition: background-color 200ms, box-shadow 200ms;
+  }
+
+  /* Locked slider — grey thumb signals "tap to activate" */
+  input[type="range"].slider-locked::-webkit-slider-thumb {
+    background: #9CA3AF;
+  }
+  input[type="range"].slider-locked::-moz-range-thumb {
+    background: #9CA3AF;
+  }
+
+  /* Active (unlocked) slider — blue glow signals "drag me" */
+  input[type="range"].slider-active::-webkit-slider-thumb {
+    background: #2563EB;
+    box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.22);
+  }
+  input[type="range"].slider-active::-moz-range-thumb {
+    background: #2563EB;
+    box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.22);
   }
 }
 
