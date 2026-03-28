@@ -2895,20 +2895,20 @@ export default function FlatOfferAnalyzer() {
                   <option value="location">{t('groupLocation')}</option>
                   <option value="renovation">{t('groupRenovation')}</option>
                 </select>
-                {getActiveFilterCount(filters) > 0 ? (
-                  <div className="flex items-center flex-shrink-0">
-                    <button onClick={() => setModal('filter')} className="p-1.5 rounded-l-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors" title={t('filterTitle')}>
-                      <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
-                    </button>
-                    <button onClick={() => setFilters(null)} className="p-1.5 rounded-r-lg bg-blue-600 text-white hover:bg-blue-700 border-l border-blue-500 transition-colors" title="Reset filters">
-                      <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 2l8 8M10 2l-8 8" /></svg>
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => setModal('filter')} className="p-1.5 rounded-lg flex-shrink-0 text-gray-500 hover:bg-gray-100 transition-colors" title={t('filterTitle')}>
+                <div className="relative flex-shrink-0">
+                  <button onClick={() => setModal('filter')} className={`p-1.5 rounded-lg transition-colors ${getActiveFilterCount(filters) > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 hover:bg-gray-100'}`} title={t('filterTitle')}>
                     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
                   </button>
-                )}
+                  {getActiveFilterCount(filters) > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setFilters(null); }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white border border-gray-300 rounded-full flex items-center justify-center shadow-sm hover:bg-gray-100 transition-colors"
+                      title="Reset filters"
+                    >
+                      <svg className="w-2 h-2 text-gray-500" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 1l6 6M7 1l-6 6" /></svg>
+                    </button>
+                  )}
+                </div>
               </div>
               <div ref={mainListScrollRef} onScroll={handleMainListScroll} onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }} className="flex-grow overflow-y-auto p-2 space-y-1" style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain' }}>
                 {offers.length === 0 ? (
@@ -3314,20 +3314,20 @@ export default function FlatOfferAnalyzer() {
                 <option value="renovation">Reno</option>
                 </optgroup>
               </select>
-              {getActiveFilterCount(filters) > 0 ? (
-                <div className="flex items-center flex-shrink-0">
-                  <button onClick={() => setModal('filter')} className="p-1 rounded-l bg-blue-600 text-white hover:bg-blue-700 transition-colors" title={t('filterTitle')}>
-                    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
-                  </button>
-                  <button onClick={() => setFilters(null)} className="p-1 rounded-r bg-blue-600 text-white hover:bg-blue-700 border-l border-blue-500 transition-colors" title="Reset filters">
-                    <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 2l8 8M10 2l-8 8" /></svg>
-                  </button>
-                </div>
-              ) : (
-                <button onClick={() => setModal('filter')} className="p-1 rounded flex-shrink-0 text-gray-500 hover:bg-gray-100 transition-colors" title={t('filterTitle')}>
+              <div className="relative flex-shrink-0">
+                <button onClick={() => setModal('filter')} className={`p-1 rounded-lg transition-colors ${getActiveFilterCount(filters) > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 hover:bg-gray-100'}`} title={t('filterTitle')}>
                   <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
                 </button>
-              )}
+                {getActiveFilterCount(filters) > 0 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setFilters(null); }}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white border border-gray-300 rounded-full flex items-center justify-center shadow-sm hover:bg-gray-100 transition-colors"
+                    title="Reset filters"
+                  >
+                    <svg className="w-2 h-2 text-gray-500" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1 1l6 6M7 1l-6 6" /></svg>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex-grow overflow-y-auto p-1" onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }}>
