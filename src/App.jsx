@@ -1246,6 +1246,7 @@ function EmailModal({ offer, onClose }) {
 
 function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }) {
   const trackRef = useRef(null);
+  const [tooltip, setTooltip] = useState(null); // { pct, label, rawValue, color }
   const vMin = valueMin ?? min;
   const vMax = valueMax ?? max;
   const pctMin = ((vMin - min) / (max - min)) * 100;
@@ -1263,13 +1264,56 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
     return { ...mark, pct, stackIndex };
   }).filter(Boolean) : [];
 
+  const findNearestMark = (clientX) => {
+    if (!trackRef.current || processedMarks.length === 0) return null;
+    const rect = trackRef.current.getBoundingClientRect();
+    const xPct = ((clientX - rect.left) / rect.width) * 100;
+    let nearest = null;
+    let minDist = Infinity;
+    for (const mark of processedMarks) {
+      const dist = Math.abs(mark.pct - xPct);
+      if (dist < minDist) { minDist = dist; nearest = mark; }
+    }
+    // Only show tooltip if within ~8% of the mark
+    return minDist < 8 ? nearest : null;
+  };
+
+  const showTooltipForMark = (mark) => {
+    if (!mark) { setTooltip(null); return; }
+    const rawValue = mark.paramKey && mark.offer ? getRawValue(mark.paramKey, mark.offer) : null;
+    setTooltip({ pct: mark.pct, label: mark.label, rawValue, color: mark.color });
+  };
+
+  const handleMouseMove = (e) => {
+    if (window.innerWidth <= 768) return;
+    showTooltipForMark(findNearestMark(e.clientX));
+  };
+
+  const handleMouseLeave = () => setTooltip(null);
+
+  const handleTouchMove = (e) => {
+    if (window.innerWidth > 768) return;
+    if (e.touches.length === 0) return;
+    e.preventDefault();
+    showTooltipForMark(findNearestMark(e.touches[0].clientX));
+  };
+
+  const handleTouchEnd = () => setTooltip(null);
+
   return (
-    <div className="relative h-8 flex items-center" ref={trackRef}>
+    <div
+      className="relative h-8 flex items-center"
+      ref={trackRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Track background */}
       <div className="absolute left-0 right-0 h-1.5 bg-gray-200 rounded-full" style={{ zIndex: 0 }} />
       {/* Highlighted range */}
       <div
-        className="absolute h-1.5 bg-blue-500 rounded-full"
+        className="absolute h-1.5 bg-gray-300 rounded-full"
         style={{ left: `${pctMin}%`, right: `${100 - pctMax}%`, zIndex: 1 }}
       />
       {/* Max thumb — rendered first (lower in stack) */}
@@ -1321,6 +1365,16 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
           />
         );
       })}
+      {/* Mark tooltip */}
+      {tooltip && (
+        <div
+          className="absolute z-20 px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none whitespace-nowrap"
+          style={{ left: `${tooltip.pct}%`, bottom: '100%', transform: 'translateX(-50%)', marginBottom: '4px' }}
+        >
+          <span className="font-medium" style={{ color: tooltip.color }}>{tooltip.label}</span>
+          {tooltip.rawValue != null && <span className="text-gray-300 ml-1">{tooltip.rawValue}</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1475,14 +1529,16 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers, passesFilte
           onChange={(v) => updateRange(key, v)}
           marks={offers ? offers.map(offer => {
             let v = null;
-            if (key === 'price') v = parsePrice(offer.data?.PRICE);
-            else if (key === 'size') v = parseSize(offer.data?.SIZE);
+            let paramKey = null;
+            if (key === 'price') { v = parsePrice(offer.data?.PRICE); paramKey = 'Low price'; }
+            else if (key === 'size') { v = parseSize(offer.data?.SIZE); paramKey = 'Interior area'; }
             else if (key === 'pricePerM2') {
               const p = parsePrice(offer.data?.PRICE);
               const s = parseSize(offer.data?.SIZE);
               v = (p && s) ? p / s : null;
-            } else if (key === 'rooms') { const r = parseInt(offer.data?.ROOMS); v = isNaN(r) ? null : r; }
-            return v != null ? { value: v, color: offer.color } : null;
+              paramKey = 'Low price per m²';
+            } else if (key === 'rooms') { const r = parseInt(offer.data?.ROOMS); v = isNaN(r) ? null : r; paramKey = 'Rooms'; }
+            return v != null ? { value: v, color: offer.color, label: offer.name, paramKey, offer } : null;
           }).filter(Boolean) : []}
         />
       </div>
