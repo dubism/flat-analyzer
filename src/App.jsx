@@ -1251,34 +1251,48 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
   const pctMin = ((vMin - min) / (max - min)) * 100;
   const pctMax = ((vMax - min) / (max - min)) * 100;
 
+  // Pre-compute stacking: group marks by rounded pct position
+  const markPositions = {};
+  const processedMarks = marks ? marks.map((mark) => {
+    const pct = ((mark.value - min) / (max - min)) * 100;
+    if (pct < 0 || pct > 100) return null;
+    const key = Math.round(pct * 10); // group marks within ~0.1% of each other
+    if (!markPositions[key]) markPositions[key] = 0;
+    const stackIndex = markPositions[key];
+    markPositions[key]++;
+    return { ...mark, pct, stackIndex };
+  }).filter(Boolean) : [];
+
   return (
     <div className="relative h-8 flex items-center" ref={trackRef}>
       {/* Track background */}
-      <div className="absolute left-0 right-0 h-1.5 bg-gray-200 rounded-full" />
+      <div className="absolute left-0 right-0 h-1.5 bg-gray-200 rounded-full" style={{ zIndex: 1 }} />
+      {/* Highlighted range */}
+      <div
+        className="absolute h-1.5 bg-blue-500 rounded-full"
+        style={{ left: `${pctMin}%`, right: `${100 - pctMax}%`, zIndex: 2 }}
+      />
       {/* Offer value marks */}
-      {marks && marks.map((mark, i) => {
-        const pct = ((mark.value - min) / (max - min)) * 100;
-        if (pct < 0 || pct > 100) return null;
+      {processedMarks.map((mark, i) => {
+        const baseHeight = 12; // px
+        const height = baseHeight * (1 + 0.1 * mark.stackIndex);
         return (
           <div
             key={i}
-            className="absolute w-1.5 h-3 rounded-full"
+            className="absolute rounded-full"
             style={{
-              left: `${pct}%`,
+              left: `${mark.pct}%`,
               top: '50%',
               transform: 'translate(-50%, -50%)',
+              width: '3px',
+              height: `${height}px`,
               backgroundColor: mark.color,
-              zIndex: 2,
+              zIndex: 3,
               opacity: 0.85,
             }}
           />
         );
       })}
-      {/* Highlighted range */}
-      <div
-        className="absolute h-1.5 bg-blue-500 rounded-full"
-        style={{ left: `${pctMin}%`, right: `${100 - pctMax}%` }}
-      />
       {/* Min thumb */}
       <input
         type="range"
@@ -1477,8 +1491,12 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers }) {
 
   const renderCheckbox = (label, checked, onChange) => (
     <label className="flex items-center gap-2 py-1.5 cursor-pointer group" onClick={onChange}>
-      <div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600' : 'border-gray-300 group-hover:border-gray-400'}`}>
-        {checked && <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+      <div className={`w-[18px] h-[18px] rounded-sm border-2 flex items-center justify-center transition-colors flex-shrink-0 ${checked ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white group-hover:border-gray-400'}`}>
+        {checked ? (
+          <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        ) : (
+          <div className="w-2 h-2 rounded-sm bg-gray-100 group-hover:bg-gray-200 transition-colors" />
+        )}
       </div>
       <span className="text-xs text-gray-700">{label}</span>
     </label>
