@@ -1246,6 +1246,7 @@ function EmailModal({ offer, onClose }) {
 
 function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }) {
   const trackRef = useRef(null);
+  const isDragging = useRef(false);
   const [tooltip, setTooltip] = useState(null); // { pct, label, rawValue, color }
   const vMin = valueMin ?? min;
   const vMax = valueMax ?? max;
@@ -1284,8 +1285,21 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
     setTooltip({ pct: mark.pct, label: mark.label, rawValue, color: mark.color });
   };
 
+  const handleDragStart = () => { isDragging.current = true; setTooltip(null); };
+
+  useEffect(() => {
+    const handleDragEnd = () => { isDragging.current = false; };
+    window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('touchend', handleDragEnd);
+    return () => {
+      window.removeEventListener('mouseup', handleDragEnd);
+      window.removeEventListener('touchend', handleDragEnd);
+    };
+  }, []);
+
   const handleMouseMove = (e) => {
     if (window.innerWidth <= 768) return;
+    if (isDragging.current) { setTooltip(null); return; }
     showTooltipForMark(findNearestMark(e.clientX));
   };
 
@@ -1294,6 +1308,7 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
   const handleTouchMove = (e) => {
     if (window.innerWidth > 768) return;
     if (e.touches.length === 0) return;
+    if (isDragging.current) { setTooltip(null); return; }
     e.preventDefault();
     showTooltipForMark(findNearestMark(e.touches[0].clientX));
   };
@@ -1323,6 +1338,8 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
         max={max}
         step={step}
         value={vMax}
+        onMouseDown={handleDragStart}
+        onTouchStart={handleDragStart}
         onChange={(e) => {
           const v = Number(e.target.value);
           if (v >= vMin) onChange({ min: valueMin, max: v === max ? null : v });
@@ -1337,6 +1354,8 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
         max={max}
         step={step}
         value={vMin}
+        onMouseDown={handleDragStart}
+        onTouchStart={handleDragStart}
         onChange={(e) => {
           const v = Number(e.target.value);
           if (v <= vMax) onChange({ min: v === min ? null : v, max: valueMax });
@@ -1359,7 +1378,7 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
               width: '3px',
               height: `${height}px`,
               backgroundColor: mark.color,
-              zIndex: 10,
+              zIndex: 2,
               opacity: 0.85,
             }}
           />
@@ -1568,7 +1587,7 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers, passesFilte
         <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold">{t('filterTitle')}</h2>
-            <span className="text-xs text-gray-400">{shownCount}/{totalCount}</span>
+            <span className="text-sm font-semibold tabular-nums"><span className="text-blue-500">{shownCount}</span><span className="text-gray-400 font-normal"> / {totalCount}</span></span>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={handleReset} className="text-xs font-medium text-gray-600 hover:text-gray-800 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">{t('filterReset')}</button>
