@@ -1272,21 +1272,7 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
         className="absolute h-1.5 bg-blue-500 rounded-full"
         style={{ left: `${pctMin}%`, right: `${100 - pctMax}%`, zIndex: 1 }}
       />
-      {/* Min thumb */}
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={vMin}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (v <= vMax) onChange({ min: v === min ? null : v, max: valueMax });
-        }}
-        className="dual-range-thumb absolute w-full pointer-events-none appearance-none bg-transparent h-8"
-        style={{ zIndex: vMin > max - step ? 5 : 4 }}
-      />
-      {/* Max thumb */}
+      {/* Max thumb — rendered first (lower z-index) */}
       <input
         type="range"
         min={min}
@@ -1296,6 +1282,20 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
         onChange={(e) => {
           const v = Number(e.target.value);
           if (v >= vMin) onChange({ min: valueMin, max: v === max ? null : v });
+        }}
+        className="dual-range-thumb absolute w-full pointer-events-none appearance-none bg-transparent h-8"
+        style={{ zIndex: 3 }}
+      />
+      {/* Min thumb — rendered second (higher z-index, always on top) */}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={vMin}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (v <= vMax) onChange({ min: v === min ? null : v, max: valueMax });
         }}
         className="dual-range-thumb absolute w-full pointer-events-none appearance-none bg-transparent h-8"
         style={{ zIndex: 4 }}
