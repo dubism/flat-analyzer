@@ -115,6 +115,14 @@ const T = {
     keepOnly: 'ponechat jen',
     dropJsonHint: 'Pusťte soubor JSON pro import',
     dropJsonSub: 'Uvolněte pro import nabídek',
+    // Filter
+    filterTitle: 'Filtr', filterReset: 'Resetovat', filterApply: 'Použít',
+    filterPrice: 'Cena', filterSize: 'Plocha', filterPricePerM2: 'Cena za m²',
+    filterRooms: 'Pokoje', filterBalcony: 'Balkón', filterCellar: 'Sklep',
+    filterParking: 'Parkování', filterBrick: 'Cihla', filterPanel: 'Panel',
+    filterHas: 'Má', filterNone: 'Žádné', filterDedicated: 'Vyhrazené', filterGarage: 'Garáž',
+    filterFrom: 'od', filterTo: 'do',
+    editPalette: 'Upravit paletu',
   },
   en: {
     addOffer: '+ Add', demo: 'Demo', langToggle: 'CS',
@@ -178,6 +186,14 @@ const T = {
     keepOnly: 'keep only',
     dropJsonHint: 'Drop JSON file to import',
     dropJsonSub: 'Release to import offers',
+    // Filter
+    filterTitle: 'Filter', filterReset: 'Reset', filterApply: 'Apply',
+    filterPrice: 'Price', filterSize: 'Size', filterPricePerM2: 'Price per m²',
+    filterRooms: 'Rooms', filterBalcony: 'Balcony', filterCellar: 'Cellar',
+    filterParking: 'Parking', filterBrick: 'Brick', filterPanel: 'Panel',
+    filterHas: 'Has', filterNone: 'None', filterDedicated: 'Dedicated', filterGarage: 'Garage',
+    filterFrom: 'from', filterTo: 'to',
+    editPalette: 'Edit palette',
   },
 };
 
@@ -772,8 +788,9 @@ function ImagePasteModal({ onClose, onSave, onRemove, currentImage, isMobile }) 
 // ADD OFFER MODAL
 // ============================================================================
 
-function AddOfferModal({ onClose, onAdd, existingOffers, palette, isMobile }) {
+function AddOfferModal({ onClose, onAdd, existingOffers, palette, isMobile, onPaletteChange }) {
   const [selectedColor, setSelectedColor] = useState(getNextColor(existingOffers, palette));
+  const [showPaletteEditor, setShowPaletteEditor] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [pasteText, setPasteText] = useState('');
   const [extractionPhase, setExtractionPhase] = useState('input'); // 'input' | 'extracted'
@@ -925,7 +942,12 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette, isMobile }) {
         <div className="p-3 flex-grow overflow-y-auto">
           {/* Color picker */}
           <div className="mb-3">
-            <label className="block text-xs font-medium text-gray-700 mb-1">{t('colors')}</label>
+            <div className="flex items-center gap-1.5 mb-1">
+              <label className="block text-xs font-medium text-gray-700">{t('colors')}</label>
+              <button type="button" onClick={() => setShowPaletteEditor(true)} className="text-gray-400 hover:text-gray-600 transition-colors" title={t('editPalette')}>
+                <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 1.5l2 2M1 8.5L7.5 2l2 2L3 10.5H1v-2z" /></svg>
+              </button>
+            </div>
             <div className="flex gap-1.5 flex-wrap">
               {palette.map(color => (
                 <button
@@ -938,7 +960,14 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette, isMobile }) {
               ))}
             </div>
           </div>
-          
+          {showPaletteEditor && (
+            <PaletteEditor
+              palette={palette}
+              onSave={(p) => { onPaletteChange(p); setShowPaletteEditor(false); }}
+              onClose={() => setShowPaletteEditor(false)}
+            />
+          )}
+
           {/* URL input */}
           <div className="mb-3">
             <label className="block text-xs font-medium text-gray-700 mb-1">{t('listingUrlLabel')}</label>
@@ -1112,10 +1141,11 @@ function AddOfferModal({ onClose, onAdd, existingOffers, palette, isMobile }) {
 // EDIT OFFER MODAL
 // ============================================================================
 
-function EditOfferModal({ offer, onClose, onSave, palette }) {
+function EditOfferModal({ offer, onClose, onSave, palette, onPaletteChange }) {
   const [name, setName] = useState(offer.name || '');
   const [selectedColor, setSelectedColor] = useState(offer.color || palette[0]);
   const [formData, setFormData] = useState(offer.data || {});
+  const [showPaletteEditor, setShowPaletteEditor] = useState(false);
 
   const handleSubmit = () => onSave({ name, data: formData, color: selectedColor });
   const inputClass = "w-full px-2 py-1.5 border border-gray-300 rounded text-sm";
@@ -1131,7 +1161,12 @@ function EditOfferModal({ offer, onClose, onSave, palette }) {
         <div className="p-3 flex-grow overflow-y-auto space-y-3">
           <div><label className={labelClass}>{t('nameLabel')}</label><input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} /></div>
           <div>
-            <label className={labelClass}>{t('colors')}</label>
+            <div className="flex items-center gap-1.5 mb-1">
+              <label className="block text-xs font-medium text-gray-700">{t('colors')}</label>
+              <button type="button" onClick={() => setShowPaletteEditor(true)} className="text-gray-400 hover:text-gray-600 transition-colors" title={t('editPalette')}>
+                <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 1.5l2 2M1 8.5L7.5 2l2 2L3 10.5H1v-2z" /></svg>
+              </button>
+            </div>
             <div className="flex gap-1 flex-wrap">
               {palette.map(color => (
                 <button
@@ -1144,6 +1179,13 @@ function EditOfferModal({ offer, onClose, onSave, palette }) {
               ))}
             </div>
           </div>
+          {showPaletteEditor && (
+            <PaletteEditor
+              palette={palette}
+              onSave={(p) => { onPaletteChange(p); setShowPaletteEditor(false); }}
+              onClose={() => setShowPaletteEditor(false)}
+            />
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div><label className={labelClass}>{t('priceLabel')}</label><input inputMode="numeric" value={formData.PRICE || ''} onChange={(e) => setFormData(p => ({ ...p, PRICE: e.target.value }))} className={inputClass} /></div>
             <div><label className={labelClass}>{t('sizeLabel')}</label><input inputMode="decimal" value={formData.SIZE || ''} onChange={(e) => setFormData(p => ({ ...p, SIZE: e.target.value }))} className={inputClass} /></div>
@@ -1192,6 +1234,267 @@ function EmailModal({ offer, onClose }) {
             <p className="whitespace-pre-line text-xs">{body}</p>
           </div>
           <button onClick={copyToClipboard} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm">{t('copyToClipboard')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// DUAL RANGE SLIDER
+// ============================================================================
+
+function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange }) {
+  const trackRef = useRef(null);
+  const vMin = valueMin ?? min;
+  const vMax = valueMax ?? max;
+  const pctMin = ((vMin - min) / (max - min)) * 100;
+  const pctMax = ((vMax - min) / (max - min)) * 100;
+
+  return (
+    <div className="relative h-8 flex items-center" ref={trackRef}>
+      {/* Track background */}
+      <div className="absolute left-0 right-0 h-1.5 bg-gray-200 rounded-full" />
+      {/* Highlighted range */}
+      <div
+        className="absolute h-1.5 bg-blue-500 rounded-full"
+        style={{ left: `${pctMin}%`, right: `${100 - pctMax}%` }}
+      />
+      {/* Min thumb */}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={vMin}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (v <= vMax) onChange({ min: v === min ? null : v, max: valueMax });
+        }}
+        className="dual-range-thumb absolute w-full pointer-events-none appearance-none bg-transparent h-8"
+        style={{ zIndex: vMin > max - step ? 5 : 3 }}
+      />
+      {/* Max thumb */}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={vMax}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (v >= vMin) onChange({ min: valueMin, max: v === max ? null : v });
+        }}
+        className="dual-range-thumb absolute w-full pointer-events-none appearance-none bg-transparent h-8"
+        style={{ zIndex: 4 }}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// FILTER MODAL
+// ============================================================================
+
+const DEFAULT_FILTER = {
+  price: { min: null, max: null },
+  size: { min: null, max: null },
+  pricePerM2: { min: null, max: null },
+  rooms: { min: null, max: null },
+  balcony: null,
+  cellar: null,
+  parking: null,
+  brick: null,
+};
+
+const FILTER_RANGES = {
+  price: { min: 0, max: 25000000, step: 100000, unit: 'Kč', format: (v) => v != null ? formatPrice(v) : '' },
+  size: { min: 0, max: 250, step: 1, unit: 'm²', format: (v) => v != null ? String(v) : '' },
+  pricePerM2: { min: 0, max: 300000, step: 1000, unit: 'Kč/m²', format: (v) => v != null ? formatPrice(v) : '' },
+  rooms: { min: 1, max: 7, step: 1, unit: '', format: (v) => v != null ? String(v) : '' },
+};
+
+function FilterModal({ filters, onApply, onClose, isMobile }) {
+  const [draft, setDraft] = useState(filters ? { ...filters, price: { ...filters.price }, size: { ...filters.size }, pricePerM2: { ...filters.pricePerM2 }, rooms: { ...filters.rooms }, parking: filters.parking ? { ...filters.parking } : null } : { ...DEFAULT_FILTER });
+  const [editingField, setEditingField] = useState(null);
+  const [editValue, setEditValue] = useState('');
+
+  const updateRange = (key, vals) => {
+    setDraft(prev => ({ ...prev, [key]: { ...prev[key], ...vals } }));
+  };
+
+  const handleApply = () => {
+    const isDefault = JSON.stringify(draft) === JSON.stringify(DEFAULT_FILTER);
+    onApply(isDefault ? null : draft);
+  };
+
+  const handleReset = () => {
+    setDraft({ ...DEFAULT_FILTER, price: { min: null, max: null }, size: { min: null, max: null }, pricePerM2: { min: null, max: null }, rooms: { min: null, max: null } });
+  };
+
+  const startEdit = (field, value) => {
+    setEditingField(field);
+    setEditValue(value != null ? String(value) : '');
+  };
+
+  const commitEdit = (rangeKey, bound) => {
+    if (editingField) {
+      const num = editValue === '' ? null : Number(editValue.replace(/\s/g, ''));
+      if (editValue === '' || !isNaN(num)) {
+        updateRange(rangeKey, { [bound]: num === 0 && bound === 'min' && rangeKey !== 'rooms' ? null : num });
+      }
+      setEditingField(null);
+    }
+  };
+
+  const renderRangeFilter = (key, labelKey) => {
+    const range = FILTER_RANGES[key];
+    const val = draft[key];
+    const minField = `${key}-min`;
+    const maxField = `${key}-max`;
+
+    return (
+      <div key={key} className="mb-5">
+        <div className="text-xs font-medium text-gray-600 mb-2">{t(labelKey)}</div>
+        <div className="flex items-center gap-2 mb-1">
+          {/* Min value */}
+          {editingField === minField ? (
+            <div className="flex items-center gap-1">
+              <input
+                autoFocus
+                type="text"
+                inputMode="numeric"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={() => commitEdit(key, 'min')}
+                onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(key, 'min'); }}
+                className="w-20 text-xs text-blue-600 border border-blue-300 rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              {range.unit && <span className="text-[10px] text-gray-400">{range.unit}</span>}
+            </div>
+          ) : (
+            <button
+              onClick={() => startEdit(minField, val.min)}
+              className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-1 rounded hover:bg-blue-50 min-w-[3rem] text-left transition-colors"
+            >
+              {val.min != null ? <>{range.format(val.min)} <span className="text-[10px] text-gray-400">{range.unit}</span></> : <span className="text-gray-300">{t('filterFrom')}</span>}
+            </button>
+          )}
+          <span className="text-gray-300 text-xs">—</span>
+          {/* Max value */}
+          {editingField === maxField ? (
+            <div className="flex items-center gap-1">
+              <input
+                autoFocus
+                type="text"
+                inputMode="numeric"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={() => commitEdit(key, 'max')}
+                onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(key, 'max'); }}
+                className="w-20 text-xs text-blue-600 border border-blue-300 rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              {range.unit && <span className="text-[10px] text-gray-400">{range.unit}</span>}
+            </div>
+          ) : (
+            <button
+              onClick={() => startEdit(maxField, val.max)}
+              className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-1 rounded hover:bg-blue-50 min-w-[3rem] text-left transition-colors"
+            >
+              {val.max != null ? <>{range.format(val.max)} <span className="text-[10px] text-gray-400">{range.unit}</span></> : <span className="text-gray-300">{t('filterTo')}</span>}
+            </button>
+          )}
+        </div>
+        <DualRangeSlider
+          min={range.min}
+          max={range.max}
+          step={range.step}
+          valueMin={val.min}
+          valueMax={val.max}
+          onChange={(v) => updateRange(key, v)}
+        />
+      </div>
+    );
+  };
+
+  const renderCheckbox = (label, checked, onChange) => (
+    <label className="flex items-center gap-2 py-1.5 cursor-pointer group">
+      <div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600' : 'border-gray-300 group-hover:border-gray-400'}`}>
+        {checked && <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+      </div>
+      <span className="text-xs text-gray-700">{label}</span>
+    </label>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`bg-white shadow-xl flex flex-col ${isMobile ? 'w-full rounded-t-2xl max-h-[85vh]' : 'rounded-xl w-full max-w-md max-h-[80vh]'}`}>
+        {/* Header */}
+        <div className="p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold">{t('filterTitle')}</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handleReset} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 hover:bg-gray-100 rounded transition-colors">{t('filterReset')}</button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-4 overflow-y-auto flex-grow">
+          {/* Continuous range filters */}
+          {renderRangeFilter('price', 'filterPrice')}
+          {renderRangeFilter('size', 'filterSize')}
+          {renderRangeFilter('pricePerM2', 'filterPricePerM2')}
+          {renderRangeFilter('rooms', 'filterRooms')}
+
+          {/* Boolean / discrete filters */}
+          <div className="border-t border-gray-100 pt-4 mt-1">
+            <div className="grid grid-cols-2 gap-x-4">
+              <div>
+                {renderCheckbox(t('filterBalcony'), draft.balcony === true, () => setDraft(prev => ({ ...prev, balcony: prev.balcony === true ? null : true })))}
+                {renderCheckbox(t('filterCellar'), draft.cellar === true, () => setDraft(prev => ({ ...prev, cellar: prev.cellar === true ? null : true })))}
+              </div>
+              <div>
+                {renderCheckbox(t('filterBrick'), draft.brick === true, () => setDraft(prev => ({ ...prev, brick: prev.brick === true ? null : (prev.brick === false ? true : true) })))}
+                {renderCheckbox(t('filterPanel'), draft.brick === false, () => setDraft(prev => ({ ...prev, brick: prev.brick === false ? null : false })))}
+              </div>
+            </div>
+
+            {/* Parking */}
+            <div className="mt-3">
+              <div className="text-xs font-medium text-gray-600 mb-1">{t('filterParking')}</div>
+              <div className="flex gap-4">
+                {renderCheckbox(t('filterNone'), draft.parking ? draft.parking.none : true, () => {
+                  setDraft(prev => {
+                    const p = prev.parking || { none: true, dedicated: true, garage: true };
+                    const next = { ...p, none: !p.none };
+                    return { ...prev, parking: (next.none && next.dedicated && next.garage) ? null : next };
+                  });
+                })}
+                {renderCheckbox(t('filterDedicated'), draft.parking ? draft.parking.dedicated : true, () => {
+                  setDraft(prev => {
+                    const p = prev.parking || { none: true, dedicated: true, garage: true };
+                    const next = { ...p, dedicated: !p.dedicated };
+                    return { ...prev, parking: (next.none && next.dedicated && next.garage) ? null : next };
+                  });
+                })}
+                {renderCheckbox(t('filterGarage'), draft.parking ? draft.parking.garage : true, () => {
+                  setDraft(prev => {
+                    const p = prev.parking || { none: true, dedicated: true, garage: true };
+                    const next = { ...p, garage: !p.garage };
+                    return { ...prev, parking: (next.none && next.dedicated && next.garage) ? null : next };
+                  });
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-3 border-t border-gray-200 flex justify-end gap-2 flex-shrink-0">
+          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">{t('cancel')}</button>
+          <button onClick={handleApply} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium">{t('filterApply')}</button>
         </div>
       </div>
     </div>
@@ -1348,6 +1651,7 @@ export default function FlatOfferAnalyzer() {
   const [pendingImport, setPendingImport] = useState(null);
   const [enabledParams, setEnabledParams] = useState(DEFAULT_ENABLED_PARAMS);
   const [palette, setPalette] = useState([...DEFAULT_PALETTE]);
+  const [filters, setFilters] = useState(null);
   const fileInputRef = useRef(null);
 
   // Mini-list sidebar refs and state (mobile only)
@@ -1557,11 +1861,69 @@ export default function FlatOfferAnalyzer() {
     setShowSyncPanel(false);
   }, []);
 
+  const passesFilter = useCallback((offer, f) => {
+    if (!f) return true;
+    const price = parsePrice(offer.data?.PRICE);
+    const size = parseSize(offer.data?.SIZE);
+    const pricePerM2 = (price && size) ? price / size : null;
+    const roomsStr = offer.data?.ROOMS;
+    const rooms = roomsStr ? parseInt(roomsStr) : null;
+
+    if (f.price.min != null && (price == null || price < f.price.min)) return false;
+    if (f.price.max != null && (price == null || price > f.price.max)) return false;
+    if (f.size.min != null && (size == null || size < f.size.min)) return false;
+    if (f.size.max != null && (size == null || size > f.size.max)) return false;
+    if (f.pricePerM2.min != null && (pricePerM2 == null || pricePerM2 < f.pricePerM2.min)) return false;
+    if (f.pricePerM2.max != null && (pricePerM2 == null || pricePerM2 > f.pricePerM2.max)) return false;
+    if (f.rooms.min != null && (rooms == null || rooms < f.rooms.min)) return false;
+    if (f.rooms.max != null && (rooms == null || rooms > f.rooms.max)) return false;
+
+    if (f.balcony === true) {
+      const b = offer.data?.BALCONY;
+      if (!b || b === 'No' || b === 'N/A' || b === 'Ne' || b === '0') return false;
+    }
+    if (f.cellar === true) {
+      const c = offer.data?.CELLAR;
+      if (!c || c === 'No' || c === 'N/A' || c === 'Ne' || c === '0') return false;
+    }
+    if (f.parking) {
+      const p = (offer.data?.PARKING || '').toLowerCase();
+      const isNone = !p || p === 'n/a' || p === 'none' || p === 'no' || p === 'ne' || p === 'žádné';
+      const isGarage = p.includes('garage') || p.includes('garáž');
+      const isDedicated = !isNone && !isGarage;
+      if (isNone && !f.parking.none) return false;
+      if (isGarage && !f.parking.garage) return false;
+      if (isDedicated && !f.parking.dedicated) return false;
+    }
+    if (f.brick === true) {
+      const b = (offer.data?.BUILDING || '').toLowerCase();
+      if (!b.includes('brick') && !b.includes('cihla') && !b.includes('cihlo')) return false;
+    } else if (f.brick === false) {
+      const b = (offer.data?.BUILDING || '').toLowerCase();
+      if (!b.includes('panel')) return false;
+    }
+    return true;
+  }, []);
+
+  const getActiveFilterCount = useCallback((f) => {
+    if (!f) return 0;
+    let count = 0;
+    if (f.price.min != null || f.price.max != null) count++;
+    if (f.size.min != null || f.size.max != null) count++;
+    if (f.pricePerM2.min != null || f.pricePerM2.max != null) count++;
+    if (f.rooms.min != null || f.rooms.max != null) count++;
+    if (f.balcony != null) count++;
+    if (f.cellar != null) count++;
+    if (f.parking && (!f.parking.none || !f.parking.dedicated || !f.parking.garage)) count++;
+    if (f.brick != null) count++;
+    return count;
+  }, []);
+
   const currentOffer = useMemo(() => offers.find(o => o.id === currentOfferId), [offers, currentOfferId]);
-  const starredOffers = useMemo(() => offers.filter(o => o.featured && (showSoldInGraph || !o.sold)), [offers, showSoldInGraph]);
+  const starredOffers = useMemo(() => offers.filter(o => o.featured && (showSoldInGraph || !o.sold) && passesFilter(o, filters)), [offers, showSoldInGraph, filters, passesFilter]);
 
   const processedOffers = useMemo(() => {
-    const activeOffers = offers.filter(o => !o.sold);
+    const activeOffers = offers.filter(o => !o.sold).filter(o => passesFilter(o, filters));
     const soldOffers = offers.filter(o => o.sold);
     let sorted = [...activeOffers];
     
@@ -1601,7 +1963,7 @@ export default function FlatOfferAnalyzer() {
       groups.push({ key: 'sold', label: 'Sold', offers: soldOffers, isSold: true });
     }
     return groups;
-  }, [offers, sortCriterion, groupCriterion, enabledParams, parameterRanges]);
+  }, [offers, sortCriterion, groupCriterion, enabledParams, parameterRanges, filters, passesFilter]);
 
   // Flat item list for mini-list sidebar alignment (mobile)
   const flatItemList = useMemo(() => {
@@ -2385,8 +2747,9 @@ export default function FlatOfferAnalyzer() {
                   <option value="location">{t('groupLocation')}</option>
                   <option value="renovation">{t('groupRenovation')}</option>
                 </select>
-                <button onClick={() => setModal('palette')} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg flex-shrink-0" title="Colors">
-                  <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
+                <button onClick={() => setModal('filter')} className={`p-1.5 rounded-lg flex-shrink-0 relative transition-colors ${getActiveFilterCount(filters) > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 hover:bg-gray-100'}`} title={t('filterTitle')}>
+                  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
+                  {getActiveFilterCount(filters) > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{getActiveFilterCount(filters)}</span>}
                 </button>
               </div>
               <div ref={mainListScrollRef} onScroll={handleMainListScroll} onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }} className="flex-grow overflow-y-auto p-2 space-y-1" style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain' }}>
@@ -2657,14 +3020,22 @@ export default function FlatOfferAnalyzer() {
         </nav>
 
         {/* Modals */}
-        {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} isMobile={isMobile} />}
-        {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} palette={palette} />}
+        {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} isMobile={isMobile} onPaletteChange={setPalette} />}
+        {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} palette={palette} onPaletteChange={setPalette} />}
         {modal === 'email' && currentOffer && <EmailModal offer={currentOffer} onClose={() => setModal(null)} />}
         {modal === 'palette' && (
           <PaletteEditor
             palette={palette}
             onSave={(p) => { setPalette(p); setModal(null); }}
             onClose={() => setModal(null)}
+          />
+        )}
+        {modal === 'filter' && (
+          <FilterModal
+            filters={filters}
+            onApply={(f) => { setFilters(f); setModal(null); }}
+            onClose={() => setModal(null)}
+            isMobile={isMobile}
           />
         )}
         {deleteTarget && <DeleteConfirmModal offerName={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
@@ -2783,8 +3154,9 @@ export default function FlatOfferAnalyzer() {
                 <option value="renovation">Reno</option>
                 </optgroup>
               </select>
-              <button onClick={() => setModal('palette')} className="p-1 text-gray-500 hover:bg-gray-100 rounded flex-shrink-0" title="Colors">
-                <div className="w-4 h-4 rounded-full" style={{ background: `conic-gradient(${palette.slice(0, 4).map((c, i) => `${c} ${i * 25}% ${(i + 1) * 25}%`).join(', ')})` }} />
+              <button onClick={() => setModal('filter')} className={`p-1 rounded flex-shrink-0 relative transition-colors ${getActiveFilterCount(filters) > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 hover:bg-gray-100'}`} title={t('filterTitle')}>
+                <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
+                {getActiveFilterCount(filters) > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{getActiveFilterCount(filters)}</span>}
               </button>
             </div>
           </div>
@@ -3030,14 +3402,22 @@ export default function FlatOfferAnalyzer() {
       </div>
 
       {/* Modals */}
-      {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} isMobile={isMobile} />}
-      {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} palette={palette} />}
+      {modal === 'add' && <AddOfferModal onClose={() => setModal(null)} onAdd={addOffer} existingOffers={offers} palette={palette} isMobile={isMobile} onPaletteChange={setPalette} />}
+      {modal === 'edit' && editingOffer && <EditOfferModal offer={editingOffer} onClose={() => { setModal(null); setEditingOffer(null); }} onSave={(u) => { updateOffer(editingOffer.id, u); setModal(null); setEditingOffer(null); }} palette={palette} onPaletteChange={setPalette} />}
       {modal === 'email' && currentOffer && <EmailModal offer={currentOffer} onClose={() => setModal(null)} />}
       {modal === 'palette' && (
         <PaletteEditor
           palette={palette}
           onSave={(p) => { setPalette(p); setModal(null); }}
           onClose={() => setModal(null)}
+        />
+      )}
+      {modal === 'filter' && (
+        <FilterModal
+          filters={filters}
+          onApply={(f) => { setFilters(f); setModal(null); }}
+          onClose={() => setModal(null)}
+          isMobile={isMobile}
         />
       )}
       {deleteTarget && <DeleteConfirmModal offerName={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
