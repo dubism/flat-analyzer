@@ -1377,9 +1377,9 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
               transform: 'translate(-50%, -50%)',
               width: '3px',
               height: `${height}px`,
-              backgroundColor: mark.color,
+              backgroundColor: (mark.value < vMin || mark.value > vMax) ? '#9ca3af' : mark.color,
               zIndex: 2,
-              opacity: 0.85,
+              opacity: (mark.value < vMin || mark.value > vMax) ? 0.6 : 0.85,
             }}
           />
         );
@@ -1473,9 +1473,13 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers, passesFilte
 
   const commitEdit = (rangeKey, bound) => {
     if (editingField) {
-      const num = editValue === '' ? null : Number(editValue.replace(/\s/g, ''));
+      const range = dynamicRanges[rangeKey];
+      let num = editValue === '' ? null : Number(editValue.replace(/\s/g, ''));
       if (editValue === '' || !isNaN(num)) {
-        updateRange(rangeKey, { [bound]: num === 0 && bound === 'min' && rangeKey !== 'rooms' ? null : num });
+        // Treat boundary values as "no filter"
+        if (num != null && bound === 'min' && num <= range.min) num = null;
+        if (num != null && bound === 'max' && num >= range.max) num = null;
+        updateRange(rangeKey, { [bound]: num });
       }
       setEditingField(null);
     }
@@ -1490,7 +1494,7 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers, passesFilte
     return (
       <div key={key} className="mb-5">
         <div className="text-xs font-medium text-gray-600 mb-2">{t(labelKey)}</div>
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center justify-between mb-1">
           {/* Min value */}
           {editingField === minField ? (
             <div className="flex items-center gap-1">
@@ -1508,7 +1512,7 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers, passesFilte
             </div>
           ) : (
             <button
-              onClick={() => startEdit(minField, val.min)}
+              onClick={() => startEdit(minField, val.min != null ? val.min : range.min)}
               className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-1 rounded hover:bg-blue-50 min-w-[3rem] text-left transition-colors"
             >
               {val.min != null ? <>{range.format(val.min)} <span className="text-[10px] text-gray-400">{range.unit}</span></> : <><span className="text-gray-400">{range.format(range.min)}</span> <span className="text-[10px] text-gray-300">{range.unit}</span></>}
@@ -1532,7 +1536,7 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers, passesFilte
             </div>
           ) : (
             <button
-              onClick={() => startEdit(maxField, val.max)}
+              onClick={() => startEdit(maxField, val.max != null ? val.max : range.max)}
               className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-1 rounded hover:bg-blue-50 min-w-[3rem] text-left transition-colors"
             >
               {val.max != null ? <>{range.format(val.max)} <span className="text-[10px] text-gray-400">{range.unit}</span></> : <><span className="text-gray-400">{range.format(range.max)}</span> <span className="text-[10px] text-gray-300">{range.unit}</span></>}
@@ -2891,10 +2895,20 @@ export default function FlatOfferAnalyzer() {
                   <option value="location">{t('groupLocation')}</option>
                   <option value="renovation">{t('groupRenovation')}</option>
                 </select>
-                <button onClick={() => setModal('filter')} className={`p-1.5 rounded-lg flex-shrink-0 relative transition-colors ${getActiveFilterCount(filters) > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 hover:bg-gray-100'}`} title={t('filterTitle')}>
-                  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
-                  {getActiveFilterCount(filters) > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{getActiveFilterCount(filters)}</span>}
-                </button>
+                {getActiveFilterCount(filters) > 0 ? (
+                  <div className="flex items-center flex-shrink-0">
+                    <button onClick={() => setModal('filter')} className="p-1.5 rounded-l-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors" title={t('filterTitle')}>
+                      <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
+                    </button>
+                    <button onClick={() => setFilters(null)} className="p-1.5 rounded-r-lg bg-blue-600 text-white hover:bg-blue-700 border-l border-blue-500 transition-colors" title="Reset filters">
+                      <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setModal('filter')} className="p-1.5 rounded-lg flex-shrink-0 text-gray-500 hover:bg-gray-100 transition-colors" title={t('filterTitle')}>
+                    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
+                  </button>
+                )}
               </div>
               <div ref={mainListScrollRef} onScroll={handleMainListScroll} onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }} className="flex-grow overflow-y-auto p-2 space-y-1" style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain' }}>
                 {offers.length === 0 ? (
@@ -3300,10 +3314,20 @@ export default function FlatOfferAnalyzer() {
                 <option value="renovation">Reno</option>
                 </optgroup>
               </select>
-              <button onClick={() => setModal('filter')} className={`p-1 rounded flex-shrink-0 relative transition-colors ${getActiveFilterCount(filters) > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 hover:bg-gray-100'}`} title={t('filterTitle')}>
-                <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
-                {getActiveFilterCount(filters) > 0 && <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{getActiveFilterCount(filters)}</span>}
-              </button>
+              {getActiveFilterCount(filters) > 0 ? (
+                <div className="flex items-center flex-shrink-0">
+                  <button onClick={() => setModal('filter')} className="p-1 rounded-l bg-blue-600 text-white hover:bg-blue-700 transition-colors" title={t('filterTitle')}>
+                    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
+                  </button>
+                  <button onClick={() => setFilters(null)} className="p-1 rounded-r bg-blue-600 text-white hover:bg-blue-700 border-l border-blue-500 transition-colors" title="Reset filters">
+                    <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setModal('filter')} className="p-1 rounded flex-shrink-0 text-gray-500 hover:bg-gray-100 transition-colors" title={t('filterTitle')}>
+                  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 2h13M3.5 5.5h9M5.5 9h5M7 12.5h2" /></svg>
+                </button>
+              )}
             </div>
           </div>
           <div className="flex-grow overflow-y-auto p-1" onClick={(e) => { if (e.target === e.currentTarget) setCurrentOfferId(null); }}>
