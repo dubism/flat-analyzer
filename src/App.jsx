@@ -1244,7 +1244,7 @@ function EmailModal({ offer, onClose }) {
 // DUAL RANGE SLIDER
 // ============================================================================
 
-function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange }) {
+function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }) {
   const trackRef = useRef(null);
   const vMin = valueMin ?? min;
   const vMax = valueMax ?? max;
@@ -1255,6 +1255,25 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange }) {
     <div className="relative h-8 flex items-center" ref={trackRef}>
       {/* Track background */}
       <div className="absolute left-0 right-0 h-1.5 bg-gray-200 rounded-full" />
+      {/* Offer value marks */}
+      {marks && marks.map((mark, i) => {
+        const pct = ((mark.value - min) / (max - min)) * 100;
+        if (pct < 0 || pct > 100) return null;
+        return (
+          <div
+            key={i}
+            className="absolute w-1.5 h-3 rounded-full"
+            style={{
+              left: `${pct}%`,
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: mark.color,
+              zIndex: 2,
+              opacity: 0.85,
+            }}
+          />
+        );
+      })}
       {/* Highlighted range */}
       <div
         className="absolute h-1.5 bg-blue-500 rounded-full"
@@ -1272,7 +1291,7 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange }) {
           if (v <= vMax) onChange({ min: v === min ? null : v, max: valueMax });
         }}
         className="dual-range-thumb absolute w-full pointer-events-none appearance-none bg-transparent h-8"
-        style={{ zIndex: vMin > max - step ? 5 : 3 }}
+        style={{ zIndex: vMin > max - step ? 5 : 4 }}
       />
       {/* Max thumb */}
       <input
@@ -1314,23 +1333,51 @@ const FILTER_RANGES = {
   rooms: { min: 1, max: 7, step: 1, unit: '', format: (v) => v != null ? String(v) : '' },
 };
 
-function FilterModal({ filters, onApply, onClose, isMobile }) {
-  const [draft, setDraft] = useState(filters ? { ...filters, price: { ...filters.price }, size: { ...filters.size }, pricePerM2: { ...filters.pricePerM2 }, rooms: { ...filters.rooms }, parking: filters.parking ? { ...filters.parking } : null } : { ...DEFAULT_FILTER });
+function FilterModal({ filters, onChange, onClose, isMobile, offers }) {
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState('');
 
+  const current = filters || DEFAULT_FILTER;
+
+  const dynamicRanges = useMemo(() => {
+    if (!offers || offers.length === 0) return FILTER_RANGES;
+    const values = { price: [], size: [], pricePerM2: [], rooms: [] };
+    offers.forEach(offer => {
+      const price = parsePrice(offer.data?.PRICE);
+      const size = parseSize(offer.data?.SIZE);
+      if (price != null) values.price.push(price);
+      if (size != null) values.size.push(size);
+      if (price != null && size != null && size > 0) values.pricePerM2.push(price / size);
+      const rooms = parseInt(offer.data?.ROOMS);
+      if (!isNaN(rooms)) values.rooms.push(rooms);
+    });
+    const result = {};
+    for (const key of Object.keys(FILTER_RANGES)) {
+      const fr = FILTER_RANGES[key];
+      const vals = values[key];
+      if (vals.length === 0) { result[key] = fr; continue; }
+      const dataMin = Math.min(...vals);
+      const dataMax = Math.max(...vals);
+      const range = dataMax - dataMin || dataMax * 0.2 || fr.step * 10;
+      const padding = range * 0.1;
+      const newMin = Math.floor((dataMin - padding) / fr.step) * fr.step;
+      const newMax = Math.ceil((dataMax + padding) / fr.step) * fr.step;
+      result[key] = { ...fr, min: Math.max(0, newMin), max: newMax };
+    }
+    return result;
+  }, [offers]);
+
+  const applyUpdate = (next) => {
+    const isDefault = JSON.stringify(next) === JSON.stringify(DEFAULT_FILTER);
+    onChange(isDefault ? null : next);
+  };
+
   const updateRange = (key, vals) => {
-    setDraft(prev => ({ ...prev, [key]: { ...prev[key], ...vals } }));
+    const next = { ...current, [key]: { ...current[key], ...vals } };
+    applyUpdate(next);
   };
 
-  const handleApply = () => {
-    const isDefault = JSON.stringify(draft) === JSON.stringify(DEFAULT_FILTER);
-    onApply(isDefault ? null : draft);
-  };
-
-  const handleReset = () => {
-    setDraft({ ...DEFAULT_FILTER, price: { min: null, max: null }, size: { min: null, max: null }, pricePerM2: { min: null, max: null }, rooms: { min: null, max: null } });
-  };
+  const handleReset = () => onChange(null);
 
   const startEdit = (field, value) => {
     setEditingField(field);
@@ -1348,8 +1395,8 @@ function FilterModal({ filters, onApply, onClose, isMobile }) {
   };
 
   const renderRangeFilter = (key, labelKey) => {
-    const range = FILTER_RANGES[key];
-    const val = draft[key];
+    const range = dynamicRanges[key];
+    const val = current[key];
     const minField = `${key}-min`;
     const maxField = `${key}-max`;
 
@@ -1412,13 +1459,24 @@ function FilterModal({ filters, onApply, onClose, isMobile }) {
           valueMin={val.min}
           valueMax={val.max}
           onChange={(v) => updateRange(key, v)}
+          marks={offers ? offers.map(offer => {
+            let v = null;
+            if (key === 'price') v = parsePrice(offer.data?.PRICE);
+            else if (key === 'size') v = parseSize(offer.data?.SIZE);
+            else if (key === 'pricePerM2') {
+              const p = parsePrice(offer.data?.PRICE);
+              const s = parseSize(offer.data?.SIZE);
+              v = (p && s) ? p / s : null;
+            } else if (key === 'rooms') { const r = parseInt(offer.data?.ROOMS); v = isNaN(r) ? null : r; }
+            return v != null ? { value: v, color: offer.color } : null;
+          }).filter(Boolean) : []}
         />
       </div>
     );
   };
 
   const renderCheckbox = (label, checked, onChange) => (
-    <label className="flex items-center gap-2 py-1.5 cursor-pointer group">
+    <label className="flex items-center gap-2 py-1.5 cursor-pointer group" onClick={onChange}>
       <div className={`w-4.5 h-4.5 rounded border-2 flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600' : 'border-gray-300 group-hover:border-gray-400'}`}>
         {checked && <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
       </div>
@@ -1452,12 +1510,12 @@ function FilterModal({ filters, onApply, onClose, isMobile }) {
           <div className="border-t border-gray-100 pt-4 mt-1">
             <div className="grid grid-cols-2 gap-x-4">
               <div>
-                {renderCheckbox(t('filterBalcony'), draft.balcony === true, () => setDraft(prev => ({ ...prev, balcony: prev.balcony === true ? null : true })))}
-                {renderCheckbox(t('filterCellar'), draft.cellar === true, () => setDraft(prev => ({ ...prev, cellar: prev.cellar === true ? null : true })))}
+                {renderCheckbox(t('filterBalcony'), current.balcony === true, () => applyUpdate({ ...current, balcony: current.balcony === true ? null : true }))}
+                {renderCheckbox(t('filterCellar'), current.cellar === true, () => applyUpdate({ ...current, cellar: current.cellar === true ? null : true }))}
               </div>
               <div>
-                {renderCheckbox(t('filterBrick'), draft.brick === true, () => setDraft(prev => ({ ...prev, brick: prev.brick === true ? null : (prev.brick === false ? true : true) })))}
-                {renderCheckbox(t('filterPanel'), draft.brick === false, () => setDraft(prev => ({ ...prev, brick: prev.brick === false ? null : false })))}
+                {renderCheckbox(t('filterBrick'), current.brick === true, () => applyUpdate({ ...current, brick: current.brick === true ? null : true }))}
+                {renderCheckbox(t('filterPanel'), current.brick === false, () => applyUpdate({ ...current, brick: current.brick === false ? null : false }))}
               </div>
             </div>
 
@@ -1465,37 +1523,26 @@ function FilterModal({ filters, onApply, onClose, isMobile }) {
             <div className="mt-3">
               <div className="text-xs font-medium text-gray-600 mb-1">{t('filterParking')}</div>
               <div className="flex gap-4">
-                {renderCheckbox(t('filterNone'), draft.parking ? draft.parking.none : true, () => {
-                  setDraft(prev => {
-                    const p = prev.parking || { none: true, dedicated: true, garage: true };
-                    const next = { ...p, none: !p.none };
-                    return { ...prev, parking: (next.none && next.dedicated && next.garage) ? null : next };
-                  });
+                {renderCheckbox(t('filterNone'), current.parking ? current.parking.none : true, () => {
+                  const p = current.parking || { none: true, dedicated: true, garage: true };
+                  const next = { ...p, none: !p.none };
+                  applyUpdate({ ...current, parking: (next.none && next.dedicated && next.garage) ? null : next });
                 })}
-                {renderCheckbox(t('filterDedicated'), draft.parking ? draft.parking.dedicated : true, () => {
-                  setDraft(prev => {
-                    const p = prev.parking || { none: true, dedicated: true, garage: true };
-                    const next = { ...p, dedicated: !p.dedicated };
-                    return { ...prev, parking: (next.none && next.dedicated && next.garage) ? null : next };
-                  });
+                {renderCheckbox(t('filterDedicated'), current.parking ? current.parking.dedicated : true, () => {
+                  const p = current.parking || { none: true, dedicated: true, garage: true };
+                  const next = { ...p, dedicated: !p.dedicated };
+                  applyUpdate({ ...current, parking: (next.none && next.dedicated && next.garage) ? null : next });
                 })}
-                {renderCheckbox(t('filterGarage'), draft.parking ? draft.parking.garage : true, () => {
-                  setDraft(prev => {
-                    const p = prev.parking || { none: true, dedicated: true, garage: true };
-                    const next = { ...p, garage: !p.garage };
-                    return { ...prev, parking: (next.none && next.dedicated && next.garage) ? null : next };
-                  });
+                {renderCheckbox(t('filterGarage'), current.parking ? current.parking.garage : true, () => {
+                  const p = current.parking || { none: true, dedicated: true, garage: true };
+                  const next = { ...p, garage: !p.garage };
+                  applyUpdate({ ...current, parking: (next.none && next.dedicated && next.garage) ? null : next });
                 })}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-3 border-t border-gray-200 flex justify-end gap-2 flex-shrink-0">
-          <button onClick={onClose} className="px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-lg text-sm">{t('cancel')}</button>
-          <button onClick={handleApply} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium">{t('filterApply')}</button>
-        </div>
       </div>
     </div>
   );
@@ -3033,9 +3080,10 @@ export default function FlatOfferAnalyzer() {
         {modal === 'filter' && (
           <FilterModal
             filters={filters}
-            onApply={(f) => { setFilters(f); setModal(null); }}
+            onChange={setFilters}
             onClose={() => setModal(null)}
             isMobile={isMobile}
+            offers={offers}
           />
         )}
         {deleteTarget && <DeleteConfirmModal offerName={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
@@ -3415,9 +3463,10 @@ export default function FlatOfferAnalyzer() {
       {modal === 'filter' && (
         <FilterModal
           filters={filters}
-          onApply={(f) => { setFilters(f); setModal(null); }}
+          onChange={setFilters}
           onClose={() => setModal(null)}
           isMobile={isMobile}
+          offers={offers}
         />
       )}
       {deleteTarget && <DeleteConfirmModal offerName={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
