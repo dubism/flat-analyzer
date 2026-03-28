@@ -1266,33 +1266,12 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
   return (
     <div className="relative h-8 flex items-center" ref={trackRef}>
       {/* Track background */}
-      <div className="absolute left-0 right-0 h-1.5 bg-gray-200 rounded-full" style={{ zIndex: 1 }} />
+      <div className="absolute left-0 right-0 h-1.5 bg-gray-200 rounded-full" style={{ zIndex: 0 }} />
       {/* Highlighted range */}
       <div
         className="absolute h-1.5 bg-blue-500 rounded-full"
-        style={{ left: `${pctMin}%`, right: `${100 - pctMax}%`, zIndex: 2 }}
+        style={{ left: `${pctMin}%`, right: `${100 - pctMax}%`, zIndex: 1 }}
       />
-      {/* Offer value marks */}
-      {processedMarks.map((mark, i) => {
-        const baseHeight = 12; // px
-        const height = baseHeight * (1 + 0.1 * mark.stackIndex);
-        return (
-          <div
-            key={i}
-            className="absolute rounded-full"
-            style={{
-              left: `${mark.pct}%`,
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '3px',
-              height: `${height}px`,
-              backgroundColor: mark.color,
-              zIndex: 3,
-              opacity: 0.85,
-            }}
-          />
-        );
-      })}
       {/* Min thumb */}
       <input
         type="range"
@@ -1321,6 +1300,27 @@ function DualRangeSlider({ min, max, valueMin, valueMax, step, onChange, marks }
         className="dual-range-thumb absolute w-full pointer-events-none appearance-none bg-transparent h-8"
         style={{ zIndex: 4 }}
       />
+      {/* Offer value marks — rendered on top of thumbs, pointer-events disabled */}
+      {processedMarks.map((mark, i) => {
+        const baseHeight = 12; // px
+        const height = baseHeight * (1 + 0.1 * mark.stackIndex);
+        return (
+          <div
+            key={i}
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              left: `${mark.pct}%`,
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '3px',
+              height: `${height}px`,
+              backgroundColor: mark.color,
+              zIndex: 10,
+              opacity: 0.85,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -1347,7 +1347,7 @@ const FILTER_RANGES = {
   rooms: { min: 1, max: 7, step: 1, unit: '', format: (v) => v != null ? String(v) : '' },
 };
 
-function FilterModal({ filters, onChange, onClose, isMobile, offers }) {
+function FilterModal({ filters, onChange, onClose, isMobile, offers, passesFilter }) {
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState('');
 
@@ -1438,7 +1438,7 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers }) {
               onClick={() => startEdit(minField, val.min)}
               className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-1 rounded hover:bg-blue-50 min-w-[3rem] text-left transition-colors"
             >
-              {val.min != null ? <>{range.format(val.min)} <span className="text-[10px] text-gray-400">{range.unit}</span></> : <span className="text-gray-300">{t('filterFrom')}</span>}
+              {val.min != null ? <>{range.format(val.min)} <span className="text-[10px] text-gray-400">{range.unit}</span></> : <><span className="text-gray-400">{range.format(range.min)}</span> <span className="text-[10px] text-gray-300">{range.unit}</span></>}
             </button>
           )}
           <span className="text-gray-300 text-xs">—</span>
@@ -1462,7 +1462,7 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers }) {
               onClick={() => startEdit(maxField, val.max)}
               className="text-xs text-blue-600 hover:text-blue-800 px-1.5 py-1 rounded hover:bg-blue-50 min-w-[3rem] text-left transition-colors"
             >
-              {val.max != null ? <>{range.format(val.max)} <span className="text-[10px] text-gray-400">{range.unit}</span></> : <span className="text-gray-300">{t('filterTo')}</span>}
+              {val.max != null ? <>{range.format(val.max)} <span className="text-[10px] text-gray-400">{range.unit}</span></> : <><span className="text-gray-400">{range.format(range.max)}</span> <span className="text-[10px] text-gray-300">{range.unit}</span></>}
             </button>
           )}
         </div>
@@ -1502,17 +1502,21 @@ function FilterModal({ filters, onChange, onClose, isMobile, offers }) {
     </label>
   );
 
+  const shownCount = offers ? offers.filter(o => passesFilter(o, current)).length : 0;
+  const totalCount = offers ? offers.length : 0;
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`bg-white shadow-xl flex flex-col ${isMobile ? 'w-full rounded-t-2xl max-h-[85vh]' : 'rounded-xl w-full max-w-md max-h-[80vh]'}`}>
         {/* Header */}
-        <div className="p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+        <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold">{t('filterTitle')}</h2>
+            <span className="text-xs text-gray-400">{shownCount}/{totalCount}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={handleReset} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 hover:bg-gray-100 rounded transition-colors">{t('filterReset')}</button>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+          <div className="flex items-center gap-3">
+            <button onClick={handleReset} className="text-xs font-medium text-gray-600 hover:text-gray-800 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">{t('filterReset')}</button>
+            <button onClick={onClose} className="flex items-center justify-center w-8 h-8 text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg text-lg leading-none transition-colors">&times;</button>
           </div>
         </div>
 
@@ -1989,7 +1993,7 @@ export default function FlatOfferAnalyzer() {
 
   const processedOffers = useMemo(() => {
     const activeOffers = offers.filter(o => !o.sold).filter(o => passesFilter(o, filters));
-    const soldOffers = offers.filter(o => o.sold);
+    const soldOffers = offers.filter(o => o.sold).filter(o => passesFilter(o, filters));
     let sorted = [...activeOffers];
     
     if (sortCriterion === 'price') sorted.sort((a, b) => (parsePrice(a.data?.PRICE) || 0) - (parsePrice(b.data?.PRICE) || 0));
@@ -3102,6 +3106,7 @@ export default function FlatOfferAnalyzer() {
             onClose={() => setModal(null)}
             isMobile={isMobile}
             offers={offers}
+            passesFilter={passesFilter}
           />
         )}
         {deleteTarget && <DeleteConfirmModal offerName={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
@@ -3485,6 +3490,7 @@ export default function FlatOfferAnalyzer() {
           onClose={() => setModal(null)}
           isMobile={isMobile}
           offers={offers}
+          passesFilter={passesFilter}
         />
       )}
       {deleteTarget && <DeleteConfirmModal offerName={deleteTarget.name} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
