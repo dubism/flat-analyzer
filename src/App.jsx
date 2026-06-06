@@ -2864,7 +2864,10 @@ export default function FlatOfferAnalyzer() {
       <div className="fixed inset-0 flex flex-col bg-gray-100">
         {/* Mobile Header */}
         <header className="bg-white shadow-sm px-3 py-2 flex items-center justify-between flex-shrink-0 z-10 safe-top">
-          <h1 className="text-base font-semibold text-gray-900">Flat Analyzer</h1>
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold text-gray-900">Flat Analyzer</h1>
+            <a href="#/notes" className="text-xs font-semibold text-blue-600 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 hover:decoration-blue-600">← FlatNotes</a>
+          </div>
           <div className="flex items-center gap-1">
             {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded text-xs">{t('demo')}</button>}
             <button onClick={handleLangToggle} className="px-2 py-1 text-gray-500 hover:bg-gray-100 rounded text-xs font-mono">{t('langToggle')}</button>
@@ -3276,7 +3279,10 @@ export default function FlatOfferAnalyzer() {
 
       {/* Header */}
       <header className="bg-white rounded-lg shadow-sm p-2 mb-1 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-gray-900">Flat Analyzer</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold text-gray-900">Flat Analyzer</h1>
+          <a href="#/notes" className="text-sm font-semibold text-blue-600 underline decoration-blue-300 underline-offset-4 hover:text-blue-800 hover:decoration-blue-600">← FlatNotes</a>
+        </div>
         <div className="flex items-center gap-1">
           {offers.length === 0 && <button onClick={loadDemoData} className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg text-xs">{t('demo')}</button>}
           <button onClick={() => setModal('add')} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">{t('addOffer')}</button>
