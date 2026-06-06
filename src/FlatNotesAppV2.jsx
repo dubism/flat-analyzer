@@ -421,12 +421,20 @@ function LinkList({ links, onAdd, onChange, onDelete }) {
 
 function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDelete, onAddRoom }) {
   const [newRoom, setNewRoom] = useState('');
+  const [editingRoomId, setEditingRoomId] = useState(null);
   const submit = (event) => {
     event.preventDefault();
     const name = newRoom.trim();
     if (!name) return;
     onAddRoom(name);
     setNewRoom('');
+  };
+  const taskSummary = (room) => {
+    const count = openTaskCount(room);
+    if (!count) return 'bez aktívnych úloh';
+    if (count === 1) return '1 aktívna úloha';
+    if (count < 5) return `${count} aktívne úlohy`;
+    return `${count} aktívnych úloh`;
   };
 
   return (
@@ -435,13 +443,15 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
         <button
           type="button"
           onClick={() => onSelect('global')}
-          className={`mb-3 flex w-full items-center justify-between rounded-2xl border px-3 py-3 text-left ${selectedId === 'global' ? 'border-stone-700 bg-stone-100 dark:border-stone-400 dark:bg-stone-800' : 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800'}`}
+          className={`mb-3 flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-left transition ${selectedId === 'global' ? 'border-stone-700 bg-stone-100 dark:border-stone-400 dark:bg-stone-800' : 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800'}`}
         >
-          <span>
-            <span className="block font-semibold text-stone-900 dark:text-stone-100">Celý byt</span>
-            <span className="text-xs text-stone-500 dark:text-stone-400">Spoločné poznámky</span>
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-stone-900 dark:text-stone-100">Celý byt</span>
+            <span className="block truncate text-xs text-stone-500 dark:text-stone-400">Spoločné poznámky</span>
           </span>
-          <span className="rounded-full bg-stone-100 px-2 py-1 text-xs text-stone-600 dark:bg-stone-800 dark:text-stone-300">{openTaskCount(globalSection)}</span>
+          {openTaskCount(globalSection) ? (
+            <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-200" title={taskSummary(globalSection)}>{openTaskCount(globalSection)}</span>
+          ) : null}
         </button>
         <form onSubmit={submit} className="flex gap-2">
           <input value={newRoom} onChange={(event) => setNewRoom(event.target.value)} placeholder="Nová miestnosť" className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-base text-stone-900 outline-none focus:border-stone-400 focus:bg-white focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:ring-stone-700" />
@@ -450,22 +460,36 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <div className="space-y-2">
-          {rooms.map((room) => (
-            <div key={room.id} className={`overflow-hidden rounded-2xl border ${selectedId === room.id ? 'border-stone-700 bg-stone-100 dark:border-stone-400 dark:bg-stone-800' : 'border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-900'}`}>
-              <button type="button" onClick={() => onSelect(room.id)} className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left hover:bg-stone-50 dark:hover:bg-stone-800">
-                <span className="min-w-0">
-                  <span className="block truncate font-medium text-stone-900 dark:text-stone-100">{room.name}</span>
-                  <span className="text-xs text-stone-500 dark:text-stone-400">{openTaskCount(room)} otvorené</span>
-                </span>
-              </button>
-              {selectedId === room.id ? (
-                <div className="border-t border-stone-200 px-3 pb-3 pt-2 dark:border-stone-700">
-                  <input value={room.name} onChange={(event) => onRename(room.id, event.target.value)} className="mb-2 w-full rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:ring-stone-700" />
-                  <button type="button" onClick={() => onDelete(room.id)} className="text-xs font-medium text-red-600 dark:text-red-400">Vymazať miestnosť</button>
-                </div>
-              ) : null}
-            </div>
-          ))}
+          {rooms.map((room) => {
+            const isSelected = selectedId === room.id;
+            const isEditing = editingRoomId === room.id;
+            const activeTasks = openTaskCount(room);
+
+            return (
+              <div key={room.id} className={`group flex items-center gap-2 rounded-2xl border px-3 py-2 transition ${isSelected ? 'border-stone-700 bg-stone-100 dark:border-stone-400 dark:bg-stone-800' : 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800'}`}>
+                {isEditing ? (
+                  <input
+                    value={room.name}
+                    autoFocus
+                    onChange={(event) => onRename(room.id, event.target.value)}
+                    onBlur={() => setEditingRoomId(null)}
+                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'Escape') setEditingRoomId(null); }}
+                    className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-sm font-medium text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:ring-stone-700"
+                  />
+                ) : (
+                  <button type="button" onClick={() => onSelect(room.id)} className="min-w-0 flex-1 py-1 text-left">
+                    <span className="block truncate font-medium text-stone-900 dark:text-stone-100">{room.name}</span>
+                    {activeTasks ? <span className="block truncate text-xs text-stone-500 dark:text-stone-400">{taskSummary(room)}</span> : null}
+                  </button>
+                )}
+                {activeTasks ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-200" title={taskSummary(room)}>{activeTasks}</span>
+                ) : null}
+                <button type="button" onClick={() => setEditingRoomId(room.id)} className="h-8 w-8 rounded-lg text-stone-400 hover:bg-white hover:text-stone-700 dark:hover:bg-stone-900 dark:hover:text-stone-100" title="Premenovať miestnosť">✎</button>
+                <button type="button" onClick={() => onDelete(room.id)} className="h-8 w-8 rounded-lg text-stone-400 hover:bg-white hover:text-red-600 dark:hover:bg-stone-900 dark:hover:text-red-400" title="Vymazať miestnosť">×</button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </aside>
