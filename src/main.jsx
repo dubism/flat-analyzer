@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import FlatNotesApp from './FlatNotesApp';
+import FlatNotesApp from './FlatNotesAppV2';
 import './index.css';
 
 function Root() {
