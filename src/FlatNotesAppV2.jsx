@@ -58,6 +58,7 @@ const SYNC_COPY = {
 };
 
 const ERROR_PHASES = new Set(['configError', 'initError', 'readError', 'writeError']);
+const QUIET_TOPBAR_PHASES = new Set(['pending', 'saving']);
 
 const formatSyncTime = (timestamp) => timestamp
   ? new Intl.DateTimeFormat('sk-SK', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(timestamp))
@@ -74,6 +75,14 @@ const syncLabel = (sync) => {
   const time = sync.lastSuccessAt && sync.phase === 'synced' ? ` · ${formatSyncTime(sync.lastSuccessAt)}` : '';
   return `${base}${time}`;
 };
+
+const compactSyncLabel = (sync) => sync.phase === 'synced' ? SYNC_COPY.synced.label : syncLabel(sync);
+
+const topbarSyncState = (sync) => (
+  QUIET_TOPBAR_PHASES.has(sync.phase) && sync.lastSuccessAt
+    ? { ...sync, phase: 'synced' }
+    : sync
+);
 
 const syncDetail = (sync) => [
   sync.detail || SYNC_COPY[sync.phase]?.detail,
@@ -916,10 +925,10 @@ export default function FlatNotesAppV2() {
   useEffect(() => {
     if (!roomCode || !localEditRef.current) return undefined;
     if ((notebook.updatedAt || 0) <= lastRemoteRef.current) return undefined;
-    setSyncState({ phase: 'pending' });
+    setSyncState((current) => ({ phase: 'pending', lastSuccessAt: current.lastSuccessAt }));
     window.clearTimeout(writeTimerRef.current);
     writeTimerRef.current = window.setTimeout(() => {
-      setSyncState({ phase: 'saving' });
+      setSyncState((current) => ({ phase: 'saving', lastSuccessAt: current.lastSuccessAt }));
       writeNotesRoom(roomCode, notebook)
         .then(() => {
           const now = Date.now();
@@ -954,9 +963,13 @@ export default function FlatNotesAppV2() {
     });
   }, [current, notebook.global?.imageOrder, notebook.rooms, selectedId]);
   const groupLabel = roomCode || 'lokálne';
-  const displayedSyncLabel = notice || syncLabel(syncState);
-  const displayedSyncDetail = notice || syncDetail(syncState);
-  const syncClasses = syncToneClasses(syncState.phase);
+  const calmSyncState = topbarSyncState(syncState);
+  const topbarSyncLabel = notice || compactSyncLabel(calmSyncState);
+  const topbarSyncDetail = notice || syncDetail(syncState);
+  const detailSyncLabel = notice || syncLabel(syncState);
+  const detailSyncDetail = notice || syncDetail(syncState);
+  const topbarSyncClasses = syncToneClasses(calmSyncState.phase);
+  const detailSyncClasses = syncToneClasses(syncState.phase);
 
   const mutate = (producer) => {
     localEditRef.current = true;
@@ -1106,9 +1119,9 @@ export default function FlatNotesAppV2() {
               <span className="h-2 w-2 flex-shrink-0 rounded-full bg-stone-400" />
               {groupLabel}
             </span>
-            <span className={`inline-flex max-w-[16rem] items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-xs font-semibold ${syncClasses.badge}`} title={displayedSyncDetail || displayedSyncLabel}>
-              <span className={`h-2 w-2 flex-shrink-0 rounded-full ${syncClasses.dot}`} />
-              {displayedSyncLabel}
+            <span className={`inline-flex max-w-[16rem] items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-xs font-semibold ${topbarSyncClasses.badge}`} title={topbarSyncDetail || topbarSyncLabel}>
+              <span className={`h-2 w-2 flex-shrink-0 rounded-full ${topbarSyncClasses.dot}`} />
+              {topbarSyncLabel}
             </span>
             <Button onClick={() => setShareMenuOpen((open) => !open)} title="Spravovať zdieľanie">
               Spravovať ▾
@@ -1120,8 +1133,8 @@ export default function FlatNotesAppV2() {
                   <div className="mb-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Skupina</p>
                     <p className="mt-1 truncate text-sm font-medium text-stone-800 dark:text-stone-100">{groupLabel}</p>
-                    <p className={`mt-1 text-xs font-semibold ${syncClasses.text}`}>{displayedSyncLabel}</p>
-                    <p className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">{displayedSyncDetail}</p>
+                    <p className={`mt-1 text-xs font-semibold ${detailSyncClasses.text}`}>{detailSyncLabel}</p>
+                    <p className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">{detailSyncDetail}</p>
                     {ERROR_PHASES.has(syncState.phase) ? (
                       <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs leading-5 text-red-700 dark:bg-red-950/40 dark:text-red-200">
                         Čo spraviť: skontrolujte Firebase Realtime Database pravidlá pre <code className="font-mono">roomNotes/{groupLabel}</code>, sieť/ad-blocker a či poznámky s obrázkami nie sú príliš veľké. Aktuálna kópia zostáva uložená lokálne v tomto prehliadači.
