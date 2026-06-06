@@ -93,12 +93,10 @@ export function writeNotesRoom(roomId, notebook) {
     updatedAt: Date.now(),
   });
 
-  return set(ref(db, `roomNotes/${roomId}`), payload).catch((error) => {
-    console.error('Flat notes Firebase write failed:', error);
-  });
+  return set(ref(db, `roomNotes/${roomId}`), payload);
 }
 
-export function subscribeToNotesRoom(roomId, callback) {
+export function subscribeToNotesRoom(roomId, callback, onError = () => {}) {
   if (!db || !roomId) return () => {};
 
   return onValue(
@@ -109,6 +107,7 @@ export function subscribeToNotesRoom(roomId, callback) {
     },
     (error) => {
       console.error('Flat notes Firebase subscribe failed:', error);
+      onError(error);
     },
   );
 }
