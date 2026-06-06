@@ -535,6 +535,8 @@ function LinkList({ links, onAdd, onChange, onDelete }) {
 }
 
 function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDelete, onAddRoom }) {
+  const selectedRoomCardClasses = 'border-amber-500 bg-amber-100 text-stone-950 shadow-[inset_4px_0_0_rgb(245,158,11),0_10px_24px_rgba(245,158,11,0.2)] ring-2 ring-amber-300 dark:border-amber-300 dark:bg-amber-500/20 dark:text-amber-50 dark:shadow-[inset_4px_0_0_rgb(252,211,77),0_10px_24px_rgba(245,158,11,0.28)] dark:ring-amber-400/50';
+  const idleRoomCardClasses = 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800';
   const [newRoom, setNewRoom] = useState('');
   const [editingRoomId, setEditingRoomId] = useState(null);
   const submit = (event) => {
@@ -558,11 +560,11 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
         <button
           type="button"
           onClick={() => onSelect('global')}
-          className={`mb-3 flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-left transition ${selectedId === 'global' ? 'border-stone-700 bg-stone-100 dark:border-stone-400 dark:bg-stone-800' : 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800'}`}
+          className={`mb-3 flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-left transition ${selectedId === 'global' ? selectedRoomCardClasses : idleRoomCardClasses}`}
         >
           <span className="min-w-0">
-            <span className="block truncate font-semibold text-stone-900 dark:text-stone-100">Celý byt</span>
-            <span className="block truncate text-xs text-stone-500 dark:text-stone-400">Spoločné poznámky</span>
+            <span className={`block truncate font-semibold ${selectedId === 'global' ? 'text-stone-950 dark:text-amber-50' : 'text-stone-900 dark:text-stone-100'}`}>Celý byt</span>
+            <span className={`block truncate text-xs ${selectedId === 'global' ? 'font-medium text-amber-900 dark:text-amber-100' : 'text-stone-500 dark:text-stone-400'}`}>Spoločné poznámky</span>
           </span>
           {openTaskCount(globalSection) ? (
             <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-200" title={taskSummary(globalSection)}>{openTaskCount(globalSection)}</span>
@@ -581,7 +583,7 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
             const activeTasks = openTaskCount(room);
 
             return (
-              <div key={room.id} className={`group flex items-center gap-2 rounded-2xl border px-3 py-2 transition ${isSelected ? 'border-stone-700 bg-stone-100 dark:border-stone-400 dark:bg-stone-800' : 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800'}`}>
+              <div key={room.id} className={`group flex items-center gap-2 rounded-2xl border px-3 py-2 transition ${isSelected ? selectedRoomCardClasses : idleRoomCardClasses}`}>
                 {isEditing ? (
                   <input
                     value={room.name}
@@ -593,8 +595,8 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
                   />
                 ) : (
                   <button type="button" onClick={() => onSelect(room.id)} className="min-w-0 flex-1 py-1 text-left">
-                    <span className="block truncate font-medium text-stone-900 dark:text-stone-100">{room.name}</span>
-                    {activeTasks ? <span className="block truncate text-xs text-stone-500 dark:text-stone-400">{taskSummary(room)}</span> : null}
+                    <span className={`block truncate font-medium ${isSelected ? 'text-stone-950 dark:text-amber-50' : 'text-stone-900 dark:text-stone-100'}`}>{room.name}</span>
+                    {activeTasks ? <span className={`block truncate text-xs ${isSelected ? 'font-medium text-amber-900 dark:text-amber-100' : 'text-stone-500 dark:text-stone-400'}`}>{taskSummary(room)}</span> : null}
                   </button>
                 )}
                 {activeTasks ? (
@@ -618,6 +620,15 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
   const resizeRef = useRef({ startX: 0, startWidth: DEFAULT_BOARD_WIDTH });
   const [draggedId, setDraggedId] = useState('');
   const [dropActive, setDropActive] = useState(false);
+  const [imageShapes, setImageShapes] = useState({});
+  const shouldStretchLandscape = mode === 'dense' && boardWidth <= 520;
+
+  const rememberImageShape = (id, event) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+    if (!naturalWidth || !naturalHeight) return;
+    const shape = naturalWidth / naturalHeight >= 1.18 ? 'landscape' : 'default';
+    setImageShapes((current) => current[id] === shape ? current : { ...current, [id]: shape });
+  };
 
   const addFiles = (files) => {
     const imageFiles = Array.from(files || []).filter((file) => file.type?.startsWith('image/'));
@@ -723,21 +734,25 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
             </article>
           )) : (
             <div className="[column-gap:3px] [column-width:14rem]">
-              {images.map((image, index) => (
-                <button
-                  key={image.id}
-                  type="button"
-                  draggable
-                  aria-label={`Presunúť obrázok ${index + 1}`}
-                  onDragStart={(event) => { setDraggedId(image.id); event.dataTransfer.setData('text/plain', image.id); event.dataTransfer.effectAllowed = 'move'; }}
-                  onDragEnd={() => setDraggedId('')}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => handleItemDrop(event, image.id)}
-                  className={`mb-[2px] block w-full break-inside-avoid overflow-hidden p-0 leading-none ${draggedId === image.id ? 'opacity-50' : ''}`}
-                >
-                  <img src={image.src} alt="" className="block h-auto w-full" />
-                </button>
-              ))}
+              {images.map((image, index) => {
+                const stretchLandscape = shouldStretchLandscape && imageShapes[image.id] === 'landscape';
+
+                return (
+                  <button
+                    key={image.id}
+                    type="button"
+                    draggable
+                    aria-label={`Presunúť obrázok ${index + 1}`}
+                    onDragStart={(event) => { setDraggedId(image.id); event.dataTransfer.setData('text/plain', image.id); event.dataTransfer.effectAllowed = 'move'; }}
+                    onDragEnd={() => setDraggedId('')}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => handleItemDrop(event, image.id)}
+                    className={`mb-[2px] block w-full break-inside-avoid overflow-hidden p-0 leading-none ${stretchLandscape ? '[column-span:all]' : ''} ${draggedId === image.id ? 'opacity-50' : ''}`}
+                  >
+                    <img src={image.src} alt="" onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" />
+                  </button>
+                );
+              })}
             </div>
           )) : (
             <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-8 text-center text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-400">
