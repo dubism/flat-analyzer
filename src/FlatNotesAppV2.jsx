@@ -13,6 +13,95 @@ const BOARD_OPEN_STORAGE_KEY = 'flat-notes-board-open';
 const BOARD_MODE_STORAGE_KEY = 'flat-notes-board-mode';
 const BOARD_WIDTH_STORAGE_KEY = 'flat-notes-board-width';
 const DEFAULT_ROOM = 'flat-notes-shared';
+
+const SYNC_COPY = {
+  local: {
+    label: 'Iba lokálne',
+    detail: 'Poznámky sú uložené len v tomto prehliadači. Pripojte alebo vytvorte skupinu pre zdieľanie.',
+  },
+  connecting: {
+    label: 'Pripájanie…',
+    detail: 'Zobrazujem lokálnu kópiu, kým Firebase nepotvrdí dáta z cloudu.',
+  },
+  seeding: {
+    label: 'Prázdna skupina — nahrávam lokálne poznámky…',
+    detail: 'Táto Firebase skupina nemala dáta, preto sa do nej ukladá aktuálna lokálna kópia.',
+  },
+  pending: {
+    label: 'Čaká na uloženie…',
+    detail: 'Máte lokálne zmeny, ktoré ešte Firebase nepotvrdil.',
+  },
+  saving: {
+    label: 'Ukladám do cloudu…',
+    detail: 'Prosím nezatvárajte kartu, kým sa zmeny nepotvrdia.',
+  },
+  synced: {
+    label: 'Synchronizované',
+    detail: 'Firebase potvrdil čítanie aj posledný zápis pre túto skupinu.',
+  },
+  configError: {
+    label: 'Firebase nie je nakonfigurovaný',
+    detail: 'Zdieľanie nemôže fungovať bez Firebase konfigurácie v nasadenom webe.',
+  },
+  initError: {
+    label: 'Synchronizácia nie je dostupná',
+    detail: 'Firebase sa nepodarilo inicializovať. Skontrolujte konfiguráciu, sieť alebo blokovanie v prehliadači.',
+  },
+  readError: {
+    label: 'Čítanie zlyhalo — zobrazujem lokálnu kópiu',
+    detail: 'Firebase odmietol alebo prerušil čítanie tejto skupiny.',
+  },
+  writeError: {
+    label: 'Zápis zlyhal — zmeny sú iba v tomto prehliadači',
+    detail: 'Firebase nepotvrdil uloženie. Skontrolujte pravidlá, sieť alebo veľkosť poznámok/obrázkov.',
+  },
+};
+
+const ERROR_PHASES = new Set(['configError', 'initError', 'readError', 'writeError']);
+
+const formatSyncTime = (timestamp) => timestamp
+  ? new Intl.DateTimeFormat('sk-SK', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(timestamp))
+  : '';
+
+const describeFirebaseError = (error) => {
+  if (!error) return '';
+  const code = error.code ? `${error.code}: ` : '';
+  return `${code}${error.message || String(error)}`;
+};
+
+const syncLabel = (sync) => {
+  const base = sync.message || SYNC_COPY[sync.phase]?.label || 'Synchronizácia';
+  const time = sync.lastSuccessAt && sync.phase === 'synced' ? ` · ${formatSyncTime(sync.lastSuccessAt)}` : '';
+  return `${base}${time}`;
+};
+
+const syncDetail = (sync) => [
+  sync.detail || SYNC_COPY[sync.phase]?.detail,
+  sync.errorMessage ? `Detail: ${sync.errorMessage}` : '',
+].filter(Boolean).join(' ');
+
+const syncToneClasses = (phase) => {
+  if (phase === 'synced') return {
+    dot: 'bg-emerald-500',
+    badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-100',
+    text: 'text-emerald-700 dark:text-emerald-200',
+  };
+  if (ERROR_PHASES.has(phase)) return {
+    dot: 'bg-red-500',
+    badge: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-100',
+    text: 'text-red-700 dark:text-red-200',
+  };
+  if (phase === 'local') return {
+    dot: 'bg-stone-400',
+    badge: 'bg-stone-200 text-stone-700 dark:bg-stone-800 dark:text-stone-200',
+    text: 'text-stone-600 dark:text-stone-300',
+  };
+  return {
+    dot: 'bg-amber-500',
+    badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-100',
+    text: 'text-amber-700 dark:text-amber-200',
+  };
+};
 const STARTER_ROOMS = ['Vstup', 'Kuchyňa', 'Obývačka', 'Spálňa', 'Kúpeľňa', 'WC', 'Balkón', 'Sklad'];
 const MIN_BOARD_WIDTH = 288;
 const MAX_BOARD_WIDTH = 704;
@@ -719,7 +808,8 @@ export default function FlatNotesAppV2() {
   const [selectedId, setSelectedId] = useState('global');
   const [roomCode, setRoomCode] = useState(() => getHashRoom() || DEFAULT_ROOM);
   const [joinCode, setJoinCode] = useState('');
-  const [status, setStatus] = useState('Pripájanie…');
+  const [syncState, setSyncState] = useState({ phase: 'connecting' });
+  const [notice, setNotice] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
   const [textModal, setTextModal] = useState(false);
   const [textDraft, setTextDraft] = useState('');
@@ -734,6 +824,7 @@ export default function FlatNotesAppV2() {
   const firstRemoteRef = useRef(true);
   const lastRemoteRef = useRef(0);
   const writeTimerRef = useRef(null);
+  const noticeTimerRef = useRef(null);
 
   useEffect(() => { document.title = 'FlatNotes'; }, []);
   useEffect(() => { notebookRef.current = notebook; saveNotebook(notebook); }, [notebook]);
@@ -767,31 +858,80 @@ export default function FlatNotesAppV2() {
     }
   }, [theme]);
 
+  const showNotice = (message) => {
+    setNotice(message);
+    window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => setNotice(''), 1600);
+  };
+
+  useEffect(() => () => {
+    window.clearTimeout(writeTimerRef.current);
+    window.clearTimeout(noticeTimerRef.current);
+  }, []);
+
   useEffect(() => {
-    if (!roomCode) { setStatus('Iba lokálne'); return undefined; }
-    if (!isNotesFirebaseConfigured()) { setStatus('Firebase nie je nakonfigurovaný'); return undefined; }
-    if (!initNotesFirebase()) { setStatus('Synchronizácia nie je dostupná'); return undefined; }
+    if (!roomCode) { setSyncState({ phase: 'local' }); return undefined; }
+    if (!isNotesFirebaseConfigured()) { setSyncState({ phase: 'configError' }); return undefined; }
+    if (!initNotesFirebase()) { setSyncState({ phase: 'initError' }); return undefined; }
 
     firstRemoteRef.current = true;
     setHashRoom(roomCode);
-    setStatus(roomCode === DEFAULT_ROOM ? 'Zdieľaná trvalá stránka' : `Pripojené: ${roomCode}`);
+    setSyncState({ phase: 'connecting' });
 
-    return subscribeToNotesRoom(roomCode, (remote) => {
-      if (!remote) { writeNotesRoom(roomCode, notebookRef.current); firstRemoteRef.current = false; return; }
-      const remoteNotebook = normalizeNotebook(remote);
-      const first = firstRemoteRef.current;
-      firstRemoteRef.current = false;
-      localEditRef.current = false;
-      lastRemoteRef.current = remoteNotebook.updatedAt || Date.now();
-      setNotebook((current) => (first || (remoteNotebook.updatedAt || 0) >= (current.updatedAt || 0) ? remoteNotebook : current));
-    });
+    return subscribeToNotesRoom(
+      roomCode,
+      (remote) => {
+        if (!remote) {
+          firstRemoteRef.current = false;
+          setSyncState({ phase: 'seeding' });
+          writeNotesRoom(roomCode, notebookRef.current)
+            .then(() => {
+              const now = Date.now();
+              lastRemoteRef.current = Math.max(notebookRef.current.updatedAt || 0, now);
+              localEditRef.current = false;
+              setSyncState({ phase: 'synced', lastSuccessAt: now });
+            })
+            .catch((error) => setSyncState({
+              phase: 'writeError',
+              errorMessage: describeFirebaseError(error),
+            }));
+          return;
+        }
+
+        const remoteNotebook = normalizeNotebook(remote);
+        const first = firstRemoteRef.current;
+        firstRemoteRef.current = false;
+        localEditRef.current = false;
+        lastRemoteRef.current = remoteNotebook.updatedAt || Date.now();
+        setNotebook((current) => (first || (remoteNotebook.updatedAt || 0) >= (current.updatedAt || 0) ? remoteNotebook : current));
+        setSyncState({ phase: 'synced', lastSuccessAt: Date.now() });
+      },
+      (error) => setSyncState({
+        phase: 'readError',
+        errorMessage: describeFirebaseError(error),
+      }),
+    );
   }, [roomCode]);
 
   useEffect(() => {
     if (!roomCode || !localEditRef.current) return undefined;
     if ((notebook.updatedAt || 0) <= lastRemoteRef.current) return undefined;
+    setSyncState({ phase: 'pending' });
     window.clearTimeout(writeTimerRef.current);
-    writeTimerRef.current = window.setTimeout(() => { writeNotesRoom(roomCode, notebook); localEditRef.current = false; }, 450);
+    writeTimerRef.current = window.setTimeout(() => {
+      setSyncState({ phase: 'saving' });
+      writeNotesRoom(roomCode, notebook)
+        .then(() => {
+          const now = Date.now();
+          lastRemoteRef.current = Math.max(notebook.updatedAt || 0, now);
+          localEditRef.current = false;
+          setSyncState({ phase: 'synced', lastSuccessAt: now });
+        })
+        .catch((error) => setSyncState({
+          phase: 'writeError',
+          errorMessage: describeFirebaseError(error),
+        }));
+    }, 450);
     return () => window.clearTimeout(writeTimerRef.current);
   }, [notebook, roomCode]);
 
@@ -813,8 +953,10 @@ export default function FlatNotesAppV2() {
       return (a.addedAt || 0) - (b.addedAt || 0);
     });
   }, [current, notebook.global?.imageOrder, notebook.rooms, selectedId]);
-  const groupLabel = roomCode === DEFAULT_ROOM ? 'zdieľané' : roomCode;
-  const syncProblem = ['Iba lokálne', 'Firebase', 'Synchronizácia'].some((text) => status.includes(text));
+  const groupLabel = roomCode || 'lokálne';
+  const displayedSyncLabel = notice || syncLabel(syncState);
+  const displayedSyncDetail = notice || syncDetail(syncState);
+  const syncClasses = syncToneClasses(syncState.phase);
 
   const mutate = (producer) => {
     localEditRef.current = true;
@@ -893,7 +1035,7 @@ export default function FlatNotesAppV2() {
     try {
       const imported = normalizeNotebook(JSON.parse(await file.text()));
       mutate(() => imported);
-      setStatus('JSON bol importovaný');
+      showNotice('JSON bol importovaný');
     } catch (error) {
       window.alert(`Import zlyhal: ${error.message}`);
     } finally {
@@ -904,7 +1046,7 @@ export default function FlatNotesAppV2() {
   const copyText = async () => {
     try {
       await navigator.clipboard.writeText(textDraft);
-      setStatus('Text bol skopírovaný');
+      showNotice('Text bol skopírovaný');
     } catch {
       window.prompt('Skopírujte tento text:', textDraft);
     }
@@ -914,7 +1056,7 @@ export default function FlatNotesAppV2() {
       const parsed = textToNotebook(textDraft);
       mutate(() => parsed);
       setTextModal(false);
-      setStatus('Text bol importovaný');
+      showNotice('Text bol importovaný');
     } catch (error) {
       window.alert(`Import textu zlyhal: ${error.message}`);
     }
@@ -923,9 +1065,8 @@ export default function FlatNotesAppV2() {
     const href = `${window.location.origin}${window.location.pathname}#/notes?room=${encodeURIComponent(roomCode)}`;
     try {
       await navigator.clipboard.writeText(href);
-      setStatus('Odkaz na zdieľanie bol skopírovaný');
+      showNotice('Odkaz na zdieľanie bol skopírovaný');
       setShareMenuOpen(false);
-      window.setTimeout(() => setStatus(roomCode === DEFAULT_ROOM ? 'Zdieľaná trvalá stránka' : `Pripojené: ${roomCode}`), 1200);
     } catch {
       window.prompt('Skopírujte tento odkaz:', href);
       setShareMenuOpen(false);
@@ -961,12 +1102,13 @@ export default function FlatNotesAppV2() {
         </div>
         <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
           <div className="relative flex items-center gap-2 rounded-2xl bg-stone-100 px-2 py-1 dark:bg-stone-950">
-            <span className="inline-flex max-w-[9rem] items-center gap-1.5 truncate rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200" title={groupLabel}>
-              <span className="h-2 w-2 flex-shrink-0 rounded-full bg-emerald-500" />
+            <span className="inline-flex max-w-[9rem] items-center gap-1.5 truncate rounded-full bg-stone-200 px-2.5 py-1 text-xs font-semibold text-stone-700 dark:bg-stone-800 dark:text-stone-200" title={`Skupina: ${groupLabel}`}>
+              <span className="h-2 w-2 flex-shrink-0 rounded-full bg-stone-400" />
               {groupLabel}
             </span>
-            <span className={`hidden max-w-[12rem] truncate text-xs sm:inline ${syncProblem ? 'text-amber-600 dark:text-amber-300' : 'text-stone-500 dark:text-stone-400'}`} title={status}>
-              {status}
+            <span className={`inline-flex max-w-[16rem] items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-xs font-semibold ${syncClasses.badge}`} title={displayedSyncDetail || displayedSyncLabel}>
+              <span className={`h-2 w-2 flex-shrink-0 rounded-full ${syncClasses.dot}`} />
+              {displayedSyncLabel}
             </span>
             <Button onClick={() => setShareMenuOpen((open) => !open)} title="Spravovať zdieľanie">
               Spravovať ▾
@@ -977,8 +1119,14 @@ export default function FlatNotesAppV2() {
                 <div className="absolute right-0 top-full z-30 mt-2 w-[min(22rem,calc(100vw-1rem))] rounded-2xl border border-stone-200 bg-white p-3 shadow-2xl dark:border-stone-700 dark:bg-stone-900">
                   <div className="mb-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Skupina</p>
-                    <p className="mt-1 truncate text-sm font-medium text-stone-800 dark:text-stone-100">{roomCode === DEFAULT_ROOM ? 'Zdieľaná trvalá stránka' : roomCode}</p>
-                    <p className={`mt-1 text-xs ${syncProblem ? 'text-amber-600 dark:text-amber-300' : 'text-stone-500 dark:text-stone-400'}`}>{status}</p>
+                    <p className="mt-1 truncate text-sm font-medium text-stone-800 dark:text-stone-100">{groupLabel}</p>
+                    <p className={`mt-1 text-xs font-semibold ${syncClasses.text}`}>{displayedSyncLabel}</p>
+                    <p className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">{displayedSyncDetail}</p>
+                    {ERROR_PHASES.has(syncState.phase) ? (
+                      <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs leading-5 text-red-700 dark:bg-red-950/40 dark:text-red-200">
+                        Čo spraviť: skontrolujte Firebase Realtime Database pravidlá pre <code className="font-mono">roomNotes/{groupLabel}</code>, sieť/ad-blocker a či poznámky s obrázkami nie sú príliš veľké. Aktuálna kópia zostáva uložená lokálne v tomto prehliadači.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button onClick={copyShare} className="w-full">Kopírovať odkaz</Button>
