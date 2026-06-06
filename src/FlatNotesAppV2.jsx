@@ -505,6 +505,7 @@ export default function FlatNotesAppV2() {
   const [mobileNav, setMobileNav] = useState(false);
   const [textModal, setTextModal] = useState(false);
   const [textDraft, setTextDraft] = useState('');
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [theme, setTheme] = useState(loadTheme);
   const fileRef = useRef(null);
   const notebookRef = useRef(notebook);
@@ -624,15 +625,18 @@ export default function FlatNotesAppV2() {
     try {
       await navigator.clipboard.writeText(href);
       setStatus('Odkaz na zdieľanie bol skopírovaný');
+      setShareMenuOpen(false);
       window.setTimeout(() => setStatus(roomCode === DEFAULT_ROOM ? 'Zdieľaná trvalá stránka' : `Pripojené: ${roomCode}`), 1200);
     } catch {
       window.prompt('Skopírujte tento odkaz:', href);
+      setShareMenuOpen(false);
     }
   };
   const createRoom = () => {
     const code = generateNotesRoomCode();
     setRoomCode(code);
     setHashRoom(code);
+    setShareMenuOpen(false);
   };
   const joinRoom = (event) => {
     event.preventDefault();
@@ -641,8 +645,9 @@ export default function FlatNotesAppV2() {
     setRoomCode(code);
     setHashRoom(code);
     setJoinCode('');
+    setShareMenuOpen(false);
   };
-  const sharedPage = () => { setRoomCode(DEFAULT_ROOM); setHashRoom(DEFAULT_ROOM); };
+  const sharedPage = () => { setRoomCode(DEFAULT_ROOM); setHashRoom(DEFAULT_ROOM); setShareMenuOpen(false); };
   const toggleTheme = () => setTheme((currentTheme) => currentTheme === 'dark' ? 'light' : 'dark');
 
   return (
@@ -686,18 +691,31 @@ export default function FlatNotesAppV2() {
                   </div>
                   <h2 className="truncate text-2xl font-semibold">{selectedTitle}</h2>
                 </div>
-                <div className="rounded-2xl border border-stone-200 bg-stone-50 p-2 dark:border-stone-700 dark:bg-stone-950">
-                  <div className="flex flex-wrap items-center gap-2">
+                <div className="relative rounded-2xl border border-stone-200 bg-stone-50 p-2 dark:border-stone-700 dark:bg-stone-950">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <span className="rounded-xl border border-stone-300 bg-stone-100 px-3 py-2 text-sm font-semibold text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200">{roomCode === DEFAULT_ROOM ? 'zdieľané' : roomCode}</span>
-                    <Button onClick={copyShare}>Kopírovať odkaz</Button>
-                    {roomCode !== DEFAULT_ROOM ? <Button onClick={sharedPage}>Zdieľaná stránka</Button> : null}
-                    <Button onClick={createRoom}>Nová skupina</Button>
-                    <form onSubmit={joinRoom} className="flex gap-2">
-                      <input value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Kód skupiny" className="w-32 rounded-xl border border-stone-200 bg-white px-3 py-2 text-base text-stone-900 outline-none placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700" />
-                      <Button type="submit">Pripojiť</Button>
-                    </form>
+                    <span className="max-w-[13rem] truncate px-1 text-xs text-stone-500 dark:text-stone-400" title={status}>{status}</span>
+                    <Button onClick={() => setShareMenuOpen((open) => !open)} title="Zobraziť nastavenia zdieľania">
+                      Zdieľanie ▾
+                    </Button>
                   </div>
-                  <p className="mt-2 px-1 text-xs text-stone-500 dark:text-stone-400">{status}</p>
+                  {shareMenuOpen ? (
+                    <div className="absolute right-2 top-full z-30 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-stone-200 bg-white p-3 shadow-2xl dark:border-stone-700 dark:bg-stone-900">
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Skupina</p>
+                        <p className="mt-1 truncate text-sm font-medium text-stone-800 dark:text-stone-100">{roomCode === DEFAULT_ROOM ? 'Zdieľaná trvalá stránka' : roomCode}</p>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Button onClick={copyShare} className="w-full">Kopírovať odkaz</Button>
+                        {roomCode !== DEFAULT_ROOM ? <Button onClick={sharedPage} className="w-full">Zdieľaná stránka</Button> : null}
+                        <Button onClick={createRoom} className="w-full">Nová skupina</Button>
+                      </div>
+                      <form onSubmit={joinRoom} className="mt-3 flex gap-2">
+                        <input value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Kód skupiny" className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-base text-stone-900 outline-none placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:ring-stone-700" />
+                        <Button type="submit">Pripojiť</Button>
+                      </form>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </section>
