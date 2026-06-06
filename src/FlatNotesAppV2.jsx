@@ -9,6 +9,8 @@ import {
 
 const STORAGE_KEY = 'flat-notes-shared-data';
 const THEME_STORAGE_KEY = 'flat-notes-theme';
+const BOARD_OPEN_STORAGE_KEY = 'flat-notes-board-open';
+const BOARD_MODE_STORAGE_KEY = 'flat-notes-board-mode';
 const DEFAULT_ROOM = 'flat-notes-shared';
 const STARTER_ROOMS = ['Vstup', 'Kuchyňa', 'Obývačka', 'Spálňa', 'Kúpeľňa', 'WC', 'Balkón', 'Sklad'];
 
@@ -33,7 +35,7 @@ const SLOVAK_FIELD_LABELS = Object.fromEntries(
 );
 
 const makeId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-const emptySection = () => ({ notes: '', links: [], tasks: [] });
+const emptySection = () => ({ notes: '', links: [], tasks: [], imageOrder: [] });
 const emptyRoom = (name) => ({
   id: makeId('room'),
   name,
@@ -42,6 +44,7 @@ const emptyRoom = (name) => ({
   decisions: '',
   links: [],
   tasks: [],
+  images: [],
 });
 const createNotebook = () => ({
   version: 2,
@@ -64,10 +67,17 @@ const normalizeTasks = (tasks) => arr(tasks).map((task) => ({
   text: task.text || '',
   done: Boolean(task.done),
 }));
+const normalizeImages = (images) => arr(images).map((image) => ({
+  id: image.id || makeId('image'),
+  src: image.src || image.dataUrl || image.url || '',
+  name: image.name || '',
+  addedAt: image.addedAt || Date.now(),
+})).filter((image) => image.src);
 const normalizeSection = (section = {}) => ({
   notes: section.notes || '',
   links: normalizeLinks(section.links),
   tasks: normalizeTasks(section.tasks),
+  imageOrder: arr(section.imageOrder).map(String),
 });
 const normalizeRoom = (room = {}) => ({
   ...normalizeSection(room),
@@ -75,6 +85,7 @@ const normalizeRoom = (room = {}) => ({
   name: room.name || 'Miestnosť',
   measurements: room.measurements || '',
   decisions: room.decisions || '',
+  images: normalizeImages(room.images),
 });
 
 const normalizeNotebook = (value) => {
@@ -118,6 +129,27 @@ const getHashRoom = () => {
 const setHashRoom = (room) => {
   const hash = room ? `#/notes?room=${encodeURIComponent(room)}` : '#/notes';
   if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
+};
+
+const loadBoardMode = () => {
+  try {
+    const saved = localStorage.getItem(BOARD_MODE_STORAGE_KEY);
+    if (saved === 'whole' || saved === 'dense') return saved;
+  } catch {
+    // Ignore localStorage errors and keep the whole-image moodboard mode by default.
+  }
+  return 'whole';
+};
+
+const loadBoardOpen = () => {
+  try {
+    const saved = localStorage.getItem(BOARD_OPEN_STORAGE_KEY);
+    if (saved === 'false') return false;
+    if (saved === 'true') return true;
+  } catch {
+    // Ignore localStorage errors and keep the moodboard visible by default.
+  }
+  return true;
 };
 
 const loadTheme = () => {
@@ -451,6 +483,114 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
   );
 }
 
+
+function MoodBoard({ open, title, images, isGlobal, mode, onModeChange, onToggle, onAddImages, onRemoveImage, onMoveImage }) {
+  const fileRef = useRef(null);
+  const [draggedId, setDraggedId] = useState('');
+  const [dropActive, setDropActive] = useState(false);
+
+  const addFiles = (files) => {
+    const imageFiles = Array.from(files || []).filter((file) => file.type?.startsWith('image/'));
+    if (imageFiles.length) onAddImages(imageFiles);
+  };
+
+  const handleDropOnBoard = (event) => {
+    event.preventDefault();
+    setDropActive(false);
+    if (!isGlobal && event.dataTransfer.files?.length) addFiles(event.dataTransfer.files);
+  };
+
+  const handleItemDrop = (event, targetId) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceId = event.dataTransfer.getData('text/plain') || draggedId;
+    setDraggedId('');
+    if (sourceId && sourceId !== targetId) onMoveImage(sourceId, targetId);
+  };
+
+  return (
+    <aside className={`relative hidden min-h-0 shrink-0 overflow-hidden border-r border-stone-200 bg-stone-50 transition-all duration-300 ease-out dark:border-stone-800 dark:bg-stone-950 md:flex ${open ? 'w-[clamp(18rem,30vw,44rem)] min-w-72 max-w-[44rem] resize-x translate-x-0 opacity-100' : 'w-0 -translate-x-6 opacity-0'}`} aria-hidden={!open}>
+      <div className="pointer-events-none absolute left-0 top-20 h-12 w-1 rounded-r-full bg-stone-800 dark:bg-stone-100" />
+      <div
+        className={`flex h-full w-full min-w-72 shrink-0 flex-col p-3 transition-colors ${dropActive ? 'bg-stone-100 dark:bg-stone-900' : ''}`}
+        onDragOver={(event) => { event.preventDefault(); if (!isGlobal) setDropActive(true); }}
+        onDragLeave={() => setDropActive(false)}
+        onDrop={handleDropOnBoard}
+      >
+        <div className="mb-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm dark:border-stone-800 dark:bg-stone-900">
+          <div className="mb-2 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Moodboard</p>
+              <h3 className="truncate text-lg font-semibold text-stone-900 dark:text-stone-100">{title}</h3>
+            </div>
+            <button type="button" onClick={onToggle} className="h-9 w-9 rounded-xl text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800" title="Skryť moodboard">‹</button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1 dark:bg-stone-950">
+            <button type="button" onClick={() => onModeChange('whole')} className={`rounded-lg px-2 py-1.5 text-xs font-semibold transition ${mode === 'whole' ? 'bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-stone-100' : 'text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100'}`}>Celé</button>
+            <button type="button" onClick={() => onModeChange('dense')} className={`rounded-lg px-2 py-1.5 text-xs font-semibold transition ${mode === 'dense' ? 'bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-stone-100' : 'text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100'}`}>Dense</button>
+          </div>
+          {mode === 'whole' ? (
+            <p className="mt-3 text-xs leading-5 text-stone-500 dark:text-stone-400">
+              {isGlobal ? 'Celý byt automaticky spája obrázky zo všetkých miestností. Poradie upravíte presunutím kariet.' : 'Presuňte sem obrázky alebo ich nahrajte. Poradie upravíte drag-dropom.'}
+            </p>
+          ) : null}
+          {!isGlobal ? (
+            <>
+              <Button onClick={() => fileRef.current?.click()} className="mt-3 w-full border-stone-800 bg-stone-800 text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white">Pridať obrázky</Button>
+              <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />
+            </>
+          ) : null}
+        </div>
+
+        <div className={`min-h-0 flex-1 overflow-y-auto ${mode === 'whole' ? 'space-y-3 pr-1' : 'pr-0'}`}>
+          {images.length ? (mode === 'whole' ? images.map((image, index) => (
+            <article
+              key={image.id}
+              draggable
+              onDragStart={(event) => { setDraggedId(image.id); event.dataTransfer.setData('text/plain', image.id); event.dataTransfer.effectAllowed = 'move'; }}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => handleItemDrop(event, image.id)}
+              className="group overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-stone-800 dark:bg-stone-900"
+            >
+              <div className="relative bg-stone-100 dark:bg-stone-800">
+                <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[32rem] w-full object-contain" />
+                <div className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">{index + 1}</div>
+                {!isGlobal ? <button type="button" onClick={() => onRemoveImage(image.id)} className="absolute right-2 top-2 h-8 w-8 rounded-full bg-black/55 text-white opacity-0 transition hover:bg-red-600 group-hover:opacity-100" title="Odstrániť obrázok">×</button> : null}
+              </div>
+              <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
+                <span className="min-w-0 truncate">{image.roomName || image.name || 'Obrázok'}</span>
+                <span className="cursor-grab select-none rounded-full bg-stone-100 px-2 py-1 dark:bg-stone-800">↕ presunúť</span>
+              </div>
+            </article>
+          )) : (
+            <div className="[column-gap:0.25rem] [column-width:7.5rem]">
+              {images.map((image, index) => (
+                <button
+                  key={image.id}
+                  type="button"
+                  draggable
+                  onDragStart={(event) => { setDraggedId(image.id); event.dataTransfer.setData('text/plain', image.id); event.dataTransfer.effectAllowed = 'move'; }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => handleItemDrop(event, image.id)}
+                  onClick={() => {}}
+                  className="mb-1 block w-full break-inside-avoid overflow-hidden bg-stone-200 p-0 leading-none dark:bg-stone-800"
+                  title={image.roomName || image.name || `Moodboard ${index + 1}`}
+                >
+                  <img src={image.src} alt="" className={`w-full object-cover ${index % 7 === 0 ? 'h-44' : index % 5 === 0 ? 'h-36' : index % 3 === 0 ? 'h-28' : 'h-32'}`} />
+                </button>
+              ))}
+            </div>
+          )) : (
+            <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-8 text-center text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-400">
+              {isGlobal ? 'Zatiaľ nie sú pridané žiadne obrázky v miestnostiach.' : 'Zatiaľ prázdny moodboard. Pretiahnite sem obrázky alebo použite tlačidlo Pridať obrázky.'}
+            </div>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function TextModal({ value, onChange, onClose, onCopy, onDownload, onImport, onReset }) {
   return (
     <div className="fixed inset-0 z-[70] flex bg-black/50 p-3 md:items-center md:justify-center" onClick={onClose}>
@@ -507,6 +647,8 @@ export default function FlatNotesAppV2() {
   const [textDraft, setTextDraft] = useState('');
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [theme, setTheme] = useState(loadTheme);
+  const [boardOpen, setBoardOpen] = useState(loadBoardOpen);
+  const [boardMode, setBoardMode] = useState(loadBoardMode);
   const fileRef = useRef(null);
   const notebookRef = useRef(notebook);
   const localEditRef = useRef(false);
@@ -516,6 +658,20 @@ export default function FlatNotesAppV2() {
 
   useEffect(() => { document.title = 'FlatNotes'; }, []);
   useEffect(() => { notebookRef.current = notebook; saveNotebook(notebook); }, [notebook]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOARD_OPEN_STORAGE_KEY, String(boardOpen));
+    } catch {
+      // Ignore localStorage errors.
+    }
+  }, [boardOpen]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOARD_MODE_STORAGE_KEY, boardMode);
+    } catch {
+      // Ignore localStorage errors.
+    }
+  }, [boardMode]);
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     try {
@@ -558,6 +714,19 @@ export default function FlatNotesAppV2() {
     [notebook, selectedId],
   );
   const selectedTitle = selectedId === 'global' ? 'Celý byt' : current.name;
+  const boardImages = useMemo(() => {
+    if (selectedId !== 'global') return arr(current.images);
+    const merged = notebook.rooms.flatMap((room) => arr(room.images).map((image) => ({ ...image, roomId: room.id, roomName: room.name })));
+    const order = arr(notebook.global?.imageOrder);
+    if (!order.length) return merged;
+    const position = new Map(order.map((id, index) => [id, index]));
+    return [...merged].sort((a, b) => {
+      const aPosition = position.has(a.id) ? position.get(a.id) : Number.MAX_SAFE_INTEGER;
+      const bPosition = position.has(b.id) ? position.get(b.id) : Number.MAX_SAFE_INTEGER;
+      if (aPosition !== bPosition) return aPosition - bPosition;
+      return (a.addedAt || 0) - (b.addedAt || 0);
+    });
+  }, [current, notebook.global?.imageOrder, notebook.rooms, selectedId]);
   const groupLabel = roomCode === DEFAULT_ROOM ? 'zdieľané' : roomCode;
   const syncProblem = ['Iba lokálne', 'Firebase', 'Synchronizácia'].some((text) => status.includes(text));
 
@@ -569,6 +738,48 @@ export default function FlatNotesAppV2() {
     ? { ...prev, global: { ...prev.global, ...patch } }
     : { ...prev, rooms: prev.rooms.map((room) => room.id === selectedId ? { ...room, ...patch } : room) });
   const updateCollection = (key, updater) => patchCurrent({ [key]: updater(arr(current[key])) });
+  const readImageFile = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ id: makeId('image'), src: reader.result, name: file.name || '', addedAt: Date.now() });
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const addBoardImages = async (files) => {
+    if (selectedId === 'global') return;
+    const targetRoomId = selectedId;
+    const images = await Promise.all(Array.from(files || []).map(readImageFile));
+    if (!images.length) return;
+    mutate((prev) => ({
+      ...prev,
+      rooms: prev.rooms.map((room) => room.id === targetRoomId ? { ...room, images: [...arr(room.images), ...images] } : room),
+    }));
+  };
+  const removeBoardImage = (id) => {
+    if (selectedId === 'global') return;
+    updateCollection('images', (images) => images.filter((image) => image.id !== id));
+  };
+  const moveInOrder = (ids, sourceId, targetId) => {
+    const next = ids.filter((id) => id !== sourceId);
+    const targetIndex = next.indexOf(targetId);
+    if (targetIndex < 0) return ids;
+    next.splice(targetIndex, 0, sourceId);
+    return next;
+  };
+  const moveBoardImage = (sourceId, targetId) => {
+    if (selectedId === 'global') {
+      mutate((prev) => {
+        const allIds = prev.rooms.flatMap((room) => arr(room.images).map((image) => image.id));
+        const ordered = arr(prev.global?.imageOrder).filter((id) => allIds.includes(id));
+        const ids = [...ordered, ...allIds.filter((id) => !ordered.includes(id))];
+        return { ...prev, global: { ...prev.global, imageOrder: moveInOrder(ids, sourceId, targetId) } };
+      });
+      return;
+    }
+    updateCollection('images', (images) => {
+      const byId = new Map(images.map((image) => [image.id, image]));
+      return moveInOrder(images.map((image) => image.id), sourceId, targetId).map((id) => byId.get(id)).filter(Boolean);
+    });
+  };
   const addRoom = (name) => mutate((prev) => {
     const room = emptyRoom(name);
     setSelectedId(room.id);
@@ -697,6 +908,7 @@ export default function FlatNotesAppV2() {
             ) : null}
           </div>
           <a href="#/analyzer" className="hidden min-h-10 items-center rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium text-stone-700 shadow-sm hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-200 dark:hover:bg-stone-800 sm:inline-flex">Analyzátor</a>
+          <Button onClick={() => setBoardOpen((open) => !open)} className="hidden md:inline-block">{boardOpen ? 'Skryť moodboard' : 'Moodboard'}</Button>
           <Button onClick={toggleTheme}>{theme === 'dark' ? 'Svetlý režim' : 'Tmavý režim'}</Button>
           <Button onClick={openText}>Text</Button>
           <Button onClick={exportJson}>JSON</Button>
@@ -708,6 +920,10 @@ export default function FlatNotesAppV2() {
         <div className="hidden md:block">
           <RoomList rooms={notebook.rooms} globalSection={notebook.global} selectedId={selectedId} onSelect={setSelectedId} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} />
         </div>
+        {!boardOpen ? (
+          <button type="button" onClick={() => setBoardOpen(true)} className="hidden w-10 shrink-0 border-r border-stone-200 bg-stone-100 text-xs font-semibold uppercase tracking-wide text-stone-500 [writing-mode:vertical-rl] hover:bg-stone-200 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 md:block">Moodboard</button>
+        ) : null}
+        <MoodBoard open={boardOpen} title={selectedTitle} images={boardImages} isGlobal={selectedId === 'global'} mode={boardMode} onModeChange={setBoardMode} onToggle={() => setBoardOpen(false)} onAddImages={addBoardImages} onRemoveImage={removeBoardImage} onMoveImage={moveBoardImage} />
         {mobileNav ? (
           <div className="fixed inset-0 z-50 flex bg-black/40 md:hidden" onClick={() => setMobileNav(false)}>
             <div className="w-[88vw] max-w-sm" onClick={(event) => event.stopPropagation()}>
