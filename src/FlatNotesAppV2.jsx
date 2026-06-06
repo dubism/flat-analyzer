@@ -52,8 +52,8 @@ const SYNC_COPY = {
     detail: 'Firebase odmietol alebo prerušil čítanie tejto skupiny.',
   },
   writeError: {
-    label: 'Zápis zlyhal — zmeny sú iba v tomto prehliadači',
-    detail: 'Firebase nepotvrdil uloženie. Skontrolujte pravidlá, sieť alebo veľkosť poznámok/obrázkov.',
+    label: 'Cloud zápis zlyhal — lokálna kópia je uložená',
+    detail: 'Firebase nepotvrdil uloženie, ale aplikácia zostáva local-first. Skontrolujte pravidlá, sieť alebo veľkosť poznámok/obrázkov.',
   },
 };
 
@@ -64,11 +64,13 @@ const formatSyncTime = (timestamp) => timestamp
   ? new Intl.DateTimeFormat('sk-SK', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(timestamp))
   : '';
 
-const describeFirebaseError = (error) => {
+const describeError = (error) => {
   if (!error) return '';
   const code = error.code ? `${error.code}: ` : '';
   return `${code}${error.message || String(error)}`;
 };
+
+const describeFirebaseError = describeError;
 
 const syncLabel = (sync) => {
   const base = sync.message || SYNC_COPY[sync.phase]?.label || 'Synchronizácia';
@@ -216,8 +218,10 @@ const loadNotebook = () => {
 const saveNotebook = (notebook) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(notebook));
+    return { ok: true, savedAt: Date.now(), errorMessage: '' };
   } catch (error) {
     console.warn('Nepodarilo sa uložiť poznámky k bytu:', error);
+    return { ok: false, savedAt: 0, errorMessage: describeError(error) };
   }
 };
 
@@ -833,6 +837,7 @@ export default function FlatNotesAppV2() {
   const [roomCode, setRoomCode] = useState(() => getHashRoom() || DEFAULT_ROOM);
   const [joinCode, setJoinCode] = useState('');
   const [syncState, setSyncState] = useState({ phase: 'connecting' });
+  const [localSaveState, setLocalSaveState] = useState({ ok: true, savedAt: 0, errorMessage: '' });
   const [notice, setNotice] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
   const [textModal, setTextModal] = useState(false);
@@ -851,7 +856,10 @@ export default function FlatNotesAppV2() {
   const noticeTimerRef = useRef(null);
 
   useEffect(() => { document.title = 'FlatNotes'; }, []);
-  useEffect(() => { notebookRef.current = notebook; saveNotebook(notebook); }, [notebook]);
+  useEffect(() => {
+    notebookRef.current = notebook;
+    setLocalSaveState(saveNotebook(notebook));
+  }, [notebook]);
   useEffect(() => {
     try {
       localStorage.setItem(BOARD_OPEN_STORAGE_KEY, String(boardOpen));
@@ -980,11 +988,14 @@ export default function FlatNotesAppV2() {
   const groupLabel = roomCode || 'lokálne';
   const calmSyncState = topbarSyncState(syncState);
   const topbarSyncLabel = notice || compactSyncLabel(calmSyncState);
-  const topbarSyncDetail = notice || syncDetail(syncState);
+  const topbarSyncDetail = localSaveState.ok ? (notice || syncDetail(syncState)) : 'Lokálne uloženie v tomto prehliadači zlyhalo.';
   const detailSyncLabel = notice || syncLabel(syncState);
-  const detailSyncDetail = notice || syncDetail(syncState);
-  const topbarSyncClasses = syncToneClasses(calmSyncState.phase);
-  const detailSyncClasses = syncToneClasses(syncState.phase);
+  const localSaveDetail = localSaveState.ok
+    ? `Lokálna kópia je uložená v tomto prehliadači${localSaveState.savedAt ? ` · ${formatSyncTime(localSaveState.savedAt)}` : ''}.`
+    : `Pozor: lokálne uloženie v tomto prehliadači zlyhalo. Detail: ${localSaveState.errorMessage || 'neznáma chyba'}`;
+  const detailSyncDetail = [notice || syncDetail(syncState), localSaveDetail].filter(Boolean).join(' ');
+  const topbarSyncClasses = syncToneClasses(localSaveState.ok ? calmSyncState.phase : 'writeError');
+  const detailSyncClasses = syncToneClasses(localSaveState.ok ? syncState.phase : 'writeError');
 
   const mutate = (producer) => {
     localEditRef.current = true;
@@ -1150,9 +1161,11 @@ export default function FlatNotesAppV2() {
                     <p className="mt-1 truncate text-sm font-medium text-stone-800 dark:text-stone-100">{groupLabel}</p>
                     <p className={`mt-1 text-xs font-semibold ${detailSyncClasses.text}`}>{detailSyncLabel}</p>
                     <p className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">{detailSyncDetail}</p>
-                    {ERROR_PHASES.has(syncState.phase) ? (
+                    {ERROR_PHASES.has(syncState.phase) || !localSaveState.ok ? (
                       <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs leading-5 text-red-700 dark:bg-red-950/40 dark:text-red-200">
-                        Čo spraviť: skontrolujte Firebase Realtime Database pravidlá pre <code className="font-mono">roomNotes/{groupLabel}</code>, sieť/ad-blocker a či poznámky s obrázkami nie sú príliš veľké. Aktuálna kópia zostáva uložená lokálne v tomto prehliadači.
+                        {localSaveState.ok
+                          ? <>Čo spraviť: cloudové zdieľanie zlyhalo, ale lokálna kópia zostáva uložená v tomto prehliadači. Skontrolujte Firebase Realtime Database pravidlá pre <code className="font-mono">roomNotes/{groupLabel}</code>, sieť/ad-blocker a či poznámky s obrázkami nie sú príliš veľké.</>
+                          : <>Čo spraviť: lokálne uloženie zlyhalo, pravdepodobne pre limit úložiska alebo blokovanie prehliadačom. Exportujte poznámky ako text/JSON a zmenšite alebo odstráňte veľké obrázky.</>}
                       </p>
                     ) : null}
                   </div>
