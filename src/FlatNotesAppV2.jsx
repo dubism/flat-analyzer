@@ -647,6 +647,13 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
   const handleItemDrop = (event, targetId) => {
     event.preventDefault();
     event.stopPropagation();
+    if (!isGlobal && event.dataTransfer.files?.length) {
+      addFiles(event.dataTransfer.files);
+      setDraggedId('');
+      setDropActive(false);
+      return;
+    }
+
     const sourceId = event.dataTransfer.getData('text/plain') || draggedId;
     setDraggedId('');
     if (sourceId && sourceId !== targetId) onMoveImage(sourceId, targetId);
@@ -724,7 +731,7 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
               </div>
             </article>
           )) : (
-            <div className="[column-gap:2px] [column-width:7rem]">
+            <div className="[column-gap:3px] [column-width:14rem]">
               {images.map((image, index) => (
                 <button
                   key={image.id}
@@ -737,7 +744,7 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                   onDrop={(event) => handleItemDrop(event, image.id)}
                   className={`mb-[2px] block w-full break-inside-avoid overflow-hidden p-0 leading-none ${draggedId === image.id ? 'opacity-50' : ''}`}
                 >
-                  <img src={image.src} alt="" className={`block w-full object-cover ${index % 11 === 0 ? 'h-52' : index % 7 === 0 ? 'h-44' : index % 5 === 0 ? 'h-36' : index % 3 === 0 ? 'h-28' : 'h-32'}`} />
+                  <img src={image.src} alt="" className="block h-auto w-full" />
                 </button>
               ))}
             </div>
