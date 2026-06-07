@@ -1012,7 +1012,6 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
               className={`group cursor-grab overflow-hidden rounded-2xl border bg-white shadow-sm transition duration-150 active:cursor-grabbing dark:bg-stone-900 ${draggedId === image.id ? 'scale-[0.98] border-amber-400 opacity-60 shadow-inner ring-2 ring-amber-300/60 dark:border-amber-300' : dropHint.targetId === image.id ? 'border-amber-400 shadow-lg ring-2 ring-amber-300/60 dark:border-amber-300' : 'border-stone-200 hover:-translate-y-0.5 hover:shadow-md dark:border-stone-800'}`}
             >
               <div className="relative bg-stone-100 dark:bg-stone-800">
-                {dropHint.targetId === image.id && dropHint.placement === 'before' ? <div className="absolute inset-x-3 top-2 z-10 h-1 rounded-full bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.9)]" /> : null}
                 {image.src ? (
                   <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[32rem] w-full object-contain" />
                 ) : (
@@ -1045,7 +1044,6 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                     onDrop={(event) => handleItemDrop(event, image.id)}
                     className={`relative mb-[2px] block w-full cursor-grab break-inside-avoid overflow-hidden p-0 leading-none transition duration-150 active:cursor-grabbing ${stretchLandscape ? '[column-span:all]' : ''} ${draggedId === image.id ? 'scale-[0.98] opacity-55 ring-2 ring-amber-300/70' : ''} ${dropHint.targetId === image.id ? 'ring-2 ring-amber-300/70' : ''}`}
                   >
-                    {dropHint.targetId === image.id ? <span className={`absolute inset-x-1 z-10 h-1 rounded-full bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.9)] ${dropHint.placement === 'after' ? 'bottom-1' : 'top-1'}`} /> : null}
                     {image.src ? (
                       <img src={image.src} alt="" onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" />
                     ) : (

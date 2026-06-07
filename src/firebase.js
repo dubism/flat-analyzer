@@ -9,20 +9,14 @@ import { getDatabase, ref, set, onValue } from 'firebase/database';
 // ============================================================================
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAHEPrKyle1xNRXRBetDV0whgGTW-7_LlQ",
-
-  authDomain: "flat-analyzer-memory.firebaseapp.com",
-
-  databaseURL: "https://flat-analyzer-memory-default-rtdb.europe-west1.firebasedatabase.app",          // ← REQUIRED: e.g. "https://your-project-default-rtdb.europe-west1.firebasedatabase.app"
-
-  projectId: "flat-analyzer-memory",
-
-  storageBucket: "flat-analyzer-memory.firebasestorage.app",
-
-  messagingSenderId: "424420313683",
-
-  appId: "1:424420313683:web:7b1193b612bd61839894a6",
-
+  apiKey: "AIzaSyALEpqIjz60SdvmcTpvpMPLhwnR7-viNl8",
+  authDomain: "flat-notes-memory.firebaseapp.com",
+  databaseURL: "https://flat-notes-memory-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "flat-notes-memory",
+  storageBucket: "flat-notes-memory.firebasestorage.app",
+  messagingSenderId: "151399612244",
+  appId: "1:151399612244:web:e1edee546efcdd8be152c1",
+  measurementId: "G-4D62H167PK",
 };
 
 // ============================================================================
