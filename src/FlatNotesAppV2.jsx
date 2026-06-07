@@ -8,6 +8,9 @@ import {
 } from './notesFirebase';
 
 const STORAGE_KEY = 'flat-notes-shared-data';
+const IMAGE_DB_NAME = 'flat-notes-images';
+const IMAGE_DB_VERSION = 1;
+const IMAGE_STORE_NAME = 'images';
 const THEME_STORAGE_KEY = 'flat-notes-theme';
 const BOARD_OPEN_STORAGE_KEY = 'flat-notes-board-open';
 const BOARD_MODE_STORAGE_KEY = 'flat-notes-board-mode';
@@ -52,8 +55,8 @@ const SYNC_COPY = {
     detail: 'Firebase odmietol alebo prerušil čítanie tejto skupiny.',
   },
   writeError: {
-    label: 'Cloud zápis zlyhal — lokálna kópia je uložená',
-    detail: 'Firebase nepotvrdil uloženie, ale aplikácia zostáva local-first. Skontrolujte pravidlá, sieť alebo veľkosť poznámok/obrázkov.',
+    label: 'Cloud zápis zlyhal — overujem lokálnu kópiu',
+    detail: 'Firebase nepotvrdil uloženie. Lokálna kópia sa považuje za bezpečnú až po overení textu aj obrázkov v prehliadači.',
   },
 };
 
@@ -171,12 +174,20 @@ const normalizeTasks = (tasks) => arr(tasks).map((task) => ({
   text: task.text || '',
   done: Boolean(task.done),
 }));
-const normalizeImages = (images) => arr(images).map((image) => ({
-  id: image.id || makeId('image'),
-  src: image.src || image.dataUrl || image.url || '',
-  name: image.name || '',
-  addedAt: image.addedAt || Date.now(),
-})).filter((image) => image.src);
+const normalizeImages = (images) => arr(images).map((image) => {
+  const id = image.id || image.srcRef || makeId('image');
+  const src = image.src || image.dataUrl || image.url || '';
+  const srcRef = image.srcRef || id;
+  return {
+    id,
+    src,
+    srcRef,
+    storage: image.storage || (src ? 'inline' : 'indexeddb'),
+    name: image.name || '',
+    addedAt: image.addedAt || Date.now(),
+    missing: Boolean(image.missing && !src),
+  };
+}).filter((image) => image.src || image.srcRef);
 const normalizeSection = (section = {}) => ({
   notes: section.notes || '',
   links: normalizeLinks(section.links),
@@ -205,6 +216,145 @@ const normalizeNotebook = (value) => {
   };
 };
 
+const forEachNotebookImage = (notebook, callback) => {
+  arr(notebook?.rooms).forEach((room) => {
+    arr(room.images).forEach((image) => callback(image, room));
+  });
+};
+
+const notebookImageIds = (notebook) => {
+  const ids = [];
+  forEachNotebookImage(notebook, (image) => {
+    if (image.id) ids.push(image.id);
+  });
+  return ids;
+};
+
+const stripNotebookImagePayloads = (notebook) => normalizeNotebook({
+  ...notebook,
+  rooms: arr(notebook.rooms).map((room) => ({
+    ...room,
+    images: arr(room.images).map((image) => ({
+      id: image.id,
+      srcRef: image.srcRef || image.id,
+      storage: image.storage === 'missing' ? 'missing' : 'indexeddb',
+      name: image.name || '',
+      addedAt: image.addedAt || Date.now(),
+      missing: Boolean(image.missing && !image.src),
+    })),
+  })),
+});
+
+const openImageDb = () => new Promise((resolve, reject) => {
+  if (!('indexedDB' in window)) {
+    reject(new Error('IndexedDB nie je dostupný v tomto prehliadači.'));
+    return;
+  }
+
+  const request = window.indexedDB.open(IMAGE_DB_NAME, IMAGE_DB_VERSION);
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    if (!db.objectStoreNames.contains(IMAGE_STORE_NAME)) db.createObjectStore(IMAGE_STORE_NAME);
+  };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error || new Error('IndexedDB otvorenie zlyhalo.'));
+  request.onblocked = () => reject(new Error('IndexedDB je blokované inou otvorenou kartou.'));
+});
+
+const withImageStore = async (mode, operation) => {
+  const db = await openImageDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(IMAGE_STORE_NAME, mode);
+      const store = transaction.objectStore(IMAGE_STORE_NAME);
+      let operationResult;
+      transaction.oncomplete = () => resolve(operationResult);
+      transaction.onerror = () => reject(transaction.error || new Error('IndexedDB transakcia zlyhala.'));
+      transaction.onabort = () => reject(transaction.error || new Error('IndexedDB transakcia bola zrušená.'));
+      operationResult = operation(store);
+    });
+  } finally {
+    db.close();
+  }
+};
+
+const requestToPromise = (request) => new Promise((resolve, reject) => {
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error || new Error('IndexedDB požiadavka zlyhala.'));
+});
+
+const saveNotebookImages = async (notebook) => {
+  const images = [];
+  forEachNotebookImage(notebook, (image) => {
+    if (image.src) images.push(image);
+  });
+  if (!images.length) return;
+
+  await withImageStore('readwrite', (store) => {
+    images.forEach((image) => {
+      store.put({
+        src: image.src,
+        name: image.name || '',
+        addedAt: image.addedAt || Date.now(),
+      }, image.srcRef || image.id);
+    });
+  });
+};
+
+const loadNotebookImages = async (notebook) => {
+  const normalized = normalizeNotebook(notebook);
+  const imageIds = notebookImageIds(normalized);
+  if (!imageIds.length) return normalized;
+
+  const loaded = await withImageStore('readonly', (store) => Promise.all(
+    imageIds.map(async (id) => [id, await requestToPromise(store.get(id))]),
+  ));
+  const byId = new Map(loaded);
+
+  return normalizeNotebook({
+    ...normalized,
+    rooms: normalized.rooms.map((room) => ({
+      ...room,
+      images: arr(room.images).map((image) => {
+        if (image.src) return { ...image, storage: 'indexeddb', srcRef: image.srcRef || image.id };
+        const stored = byId.get(image.srcRef || image.id);
+        if (!stored?.src) return { ...image, storage: 'missing', missing: true };
+        return {
+          ...image,
+          src: stored.src,
+          name: image.name || stored.name || '',
+          addedAt: image.addedAt || stored.addedAt || Date.now(),
+          storage: 'indexeddb',
+          missing: false,
+        };
+      }),
+    })),
+  });
+};
+
+const verifyNotebookPersisted = async (expected) => {
+  const expectedIds = new Set(notebookImageIds(expected));
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return { ok: false, missingImageIds: [...expectedIds], errorMessage: 'Lokálna metadata kópia neexistuje.' };
+
+  const restored = normalizeNotebook(JSON.parse(raw));
+  const restoredIds = new Set(notebookImageIds(restored));
+  const missingMetadataIds = [...expectedIds].filter((id) => !restoredIds.has(id));
+  if (missingMetadataIds.length) {
+    return { ok: false, missingImageIds: missingMetadataIds, errorMessage: `V lokálnej metadata kópii chýba ${missingMetadataIds.length} obrázok/obrázkov.` };
+  }
+
+  const loaded = await loadNotebookImages(restored);
+  const missingImageIds = [];
+  forEachNotebookImage(loaded, (image) => {
+    if (expectedIds.has(image.id) && !image.src) missingImageIds.push(image.id);
+  });
+
+  return missingImageIds.length
+    ? { ok: false, missingImageIds, errorMessage: `IndexedDB nevrátilo ${missingImageIds.length} obrázok/obrázkov.` }
+    : { ok: true, missingImageIds: [], errorMessage: '' };
+};
+
 const loadNotebook = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -215,14 +365,71 @@ const loadNotebook = () => {
   return createNotebook();
 };
 
-const saveNotebook = (notebook) => {
+const saveNotebook = async (notebook) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notebook));
-    return { ok: true, savedAt: Date.now(), errorMessage: '' };
+    await saveNotebookImages(notebook);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stripNotebookImagePayloads(notebook)));
+    const verification = await verifyNotebookPersisted(notebook);
+    if (!verification.ok) throw new Error(verification.errorMessage || 'Overenie lokálneho uloženia zlyhalo.');
+    return { ok: true, savedAt: Date.now(), errorMessage: '', missingImageIds: [] };
   } catch (error) {
     console.warn('Nepodarilo sa uložiť poznámky k bytu:', error);
-    return { ok: false, savedAt: 0, errorMessage: describeError(error) };
+    return { ok: false, savedAt: 0, errorMessage: describeError(error), missingImageIds: [] };
   }
+};
+
+const mergeImages = (localImages, remoteImages) => {
+  const merged = new Map();
+  arr(remoteImages).forEach((image) => merged.set(image.id, image));
+  arr(localImages).forEach((image) => {
+    const existing = merged.get(image.id);
+    merged.set(image.id, existing ? { ...existing, ...image, src: image.src || existing.src } : image);
+  });
+  return [...merged.values()].sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
+};
+
+const mergeNotebookSections = (localSection = {}, remoteSection = {}, preferLocalText) => ({
+  ...remoteSection,
+  ...localSection,
+  notes: preferLocalText ? (localSection.notes || remoteSection.notes || '') : (remoteSection.notes || localSection.notes || ''),
+  links: preferLocalText ? arr(localSection.links) : arr(remoteSection.links).length ? arr(remoteSection.links) : arr(localSection.links),
+  tasks: preferLocalText ? arr(localSection.tasks) : arr(remoteSection.tasks).length ? arr(remoteSection.tasks) : arr(localSection.tasks),
+  imageOrder: [...new Set([...arr(localSection.imageOrder), ...arr(remoteSection.imageOrder)])],
+});
+
+const mergeNotebooks = (localNotebook, remoteNotebook) => {
+  const local = normalizeNotebook(localNotebook);
+  const remote = normalizeNotebook(remoteNotebook);
+  const preferLocalText = (local.updatedAt || 0) >= (remote.updatedAt || 0);
+  const roomsById = new Map(remote.rooms.map((room) => [room.id, room]));
+
+  local.rooms.forEach((localRoom) => {
+    const remoteRoom = roomsById.get(localRoom.id);
+    if (!remoteRoom) {
+      roomsById.set(localRoom.id, localRoom);
+      return;
+    }
+    roomsById.set(localRoom.id, {
+      ...remoteRoom,
+      ...localRoom,
+      name: preferLocalText ? (localRoom.name || remoteRoom.name) : (remoteRoom.name || localRoom.name),
+      notes: preferLocalText ? (localRoom.notes || remoteRoom.notes || '') : (remoteRoom.notes || localRoom.notes || ''),
+      measurements: preferLocalText ? (localRoom.measurements || remoteRoom.measurements || '') : (remoteRoom.measurements || localRoom.measurements || ''),
+      decisions: preferLocalText ? (localRoom.decisions || remoteRoom.decisions || '') : (remoteRoom.decisions || localRoom.decisions || ''),
+      links: preferLocalText ? arr(localRoom.links) : arr(remoteRoom.links).length ? arr(remoteRoom.links) : arr(localRoom.links),
+      tasks: preferLocalText ? arr(localRoom.tasks) : arr(remoteRoom.tasks).length ? arr(remoteRoom.tasks) : arr(localRoom.tasks),
+      images: mergeImages(localRoom.images, remoteRoom.images),
+    });
+  });
+
+  return normalizeNotebook({
+    ...remote,
+    ...local,
+    title: preferLocalText ? (local.title || remote.title) : (remote.title || local.title),
+    global: mergeNotebookSections(local.global, remote.global, preferLocalText),
+    rooms: [...roomsById.values()],
+    updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0, Date.now()),
+  });
 };
 
 const getHashRoom = () => {
@@ -736,7 +943,11 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
               className="group overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-stone-800 dark:bg-stone-900"
             >
               <div className="relative bg-stone-100 dark:bg-stone-800">
-                <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[32rem] w-full object-contain" />
+                {image.src ? (
+                  <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[32rem] w-full object-contain" />
+                ) : (
+                  <div className="flex min-h-40 items-center justify-center p-4 text-center text-sm font-medium text-red-700 dark:text-red-200">Obrázok sa nepodarilo obnoviť z lokálneho úložiska.</div>
+                )}
                 <div className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">{index + 1}</div>
                 {!isGlobal ? <button type="button" onClick={() => onRemoveImage(image.id)} className="absolute right-2 top-2 h-8 w-8 rounded-full bg-black/55 text-white opacity-0 transition hover:bg-red-600 group-hover:opacity-100" title="Odstrániť obrázok">×</button> : null}
               </div>
@@ -762,7 +973,11 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                     onDrop={(event) => handleItemDrop(event, image.id)}
                     className={`mb-[2px] block w-full break-inside-avoid overflow-hidden p-0 leading-none ${stretchLandscape ? '[column-span:all]' : ''} ${draggedId === image.id ? 'opacity-50' : ''}`}
                   >
-                    <img src={image.src} alt="" onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" />
+                    {image.src ? (
+                      <img src={image.src} alt="" onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" />
+                    ) : (
+                      <span className="block rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium leading-5 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">Chýba lokálny obrázok</span>
+                    )}
                   </button>
                 );
               })}
@@ -837,7 +1052,7 @@ export default function FlatNotesAppV2() {
   const [roomCode, setRoomCode] = useState(() => getHashRoom() || DEFAULT_ROOM);
   const [joinCode, setJoinCode] = useState('');
   const [syncState, setSyncState] = useState({ phase: 'connecting' });
-  const [localSaveState, setLocalSaveState] = useState({ ok: true, savedAt: 0, errorMessage: '' });
+  const [localSaveState, setLocalSaveState] = useState({ ok: true, pending: true, savedAt: 0, errorMessage: '' });
   const [notice, setNotice] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
   const [textModal, setTextModal] = useState(false);
@@ -857,9 +1072,33 @@ export default function FlatNotesAppV2() {
 
   useEffect(() => { document.title = 'FlatNotes'; }, []);
   useEffect(() => {
+    let cancelled = false;
     notebookRef.current = notebook;
-    setLocalSaveState(saveNotebook(notebook));
+    setLocalSaveState((current) => ({ ...current, pending: true }));
+    saveNotebook(notebook).then((result) => {
+      if (!cancelled) setLocalSaveState({ ...result, pending: false });
+    });
+    return () => { cancelled = true; };
   }, [notebook]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadNotebookImages(notebookRef.current)
+      .then((hydrated) => {
+        if (cancelled) return;
+        setNotebook((current) => {
+          const currentIds = notebookImageIds(current).join('|');
+          const hydratedIds = notebookImageIds(hydrated).join('|');
+          if (currentIds !== hydratedIds) return current;
+          return hydrated;
+        });
+      })
+      .catch((error) => {
+        console.warn('Nepodarilo sa obnoviť obrázky z IndexedDB:', error);
+        setLocalSaveState({ ok: false, pending: false, savedAt: 0, errorMessage: describeError(error) });
+      });
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     try {
       localStorage.setItem(BOARD_OPEN_STORAGE_KEY, String(boardOpen));
@@ -916,7 +1155,7 @@ export default function FlatNotesAppV2() {
         if (!remote) {
           firstRemoteRef.current = false;
           setSyncState({ phase: 'seeding' });
-          writeNotesRoom(roomCode, notebookRef.current)
+          writeNotesRoom(roomCode, stripNotebookImagePayloads(notebookRef.current))
             .then(() => {
               const now = Date.now();
               lastRemoteRef.current = Math.max(notebookRef.current.updatedAt || 0, now);
@@ -935,7 +1174,13 @@ export default function FlatNotesAppV2() {
         firstRemoteRef.current = false;
         localEditRef.current = false;
         lastRemoteRef.current = remoteNotebook.updatedAt || Date.now();
-        setNotebook((current) => (first || (remoteNotebook.updatedAt || 0) >= (current.updatedAt || 0) ? remoteNotebook : current));
+        setNotebook((current) => {
+          if (first) {
+            localEditRef.current = true;
+            return mergeNotebooks(current, remoteNotebook);
+          }
+          return (remoteNotebook.updatedAt || 0) >= (current.updatedAt || 0) ? mergeNotebooks(current, remoteNotebook) : current;
+        });
         setSyncState({ phase: 'synced', lastSuccessAt: Date.now() });
       },
       (error) => setSyncState({
@@ -952,7 +1197,7 @@ export default function FlatNotesAppV2() {
     window.clearTimeout(writeTimerRef.current);
     writeTimerRef.current = window.setTimeout(() => {
       setSyncState((current) => ({ phase: 'saving', lastSuccessAt: current.lastSuccessAt }));
-      writeNotesRoom(roomCode, notebook)
+      writeNotesRoom(roomCode, stripNotebookImagePayloads(notebook))
         .then(() => {
           const now = Date.now();
           lastRemoteRef.current = Math.max(notebook.updatedAt || 0, now);
@@ -988,14 +1233,17 @@ export default function FlatNotesAppV2() {
   const groupLabel = roomCode || 'lokálne';
   const calmSyncState = topbarSyncState(syncState);
   const topbarSyncLabel = notice || compactSyncLabel(calmSyncState);
-  const topbarSyncDetail = localSaveState.ok ? (notice || syncDetail(syncState)) : 'Lokálne uloženie v tomto prehliadači zlyhalo.';
+  const localPersistenceSafe = localSaveState.ok && !localSaveState.pending;
+  const topbarSyncDetail = localPersistenceSafe ? (notice || syncDetail(syncState)) : 'Lokálne uloženie textu a obrázkov sa ešte overuje alebo zlyhalo.';
   const detailSyncLabel = notice || syncLabel(syncState);
-  const localSaveDetail = localSaveState.ok
-    ? `Lokálna kópia je uložená v tomto prehliadači${localSaveState.savedAt ? ` · ${formatSyncTime(localSaveState.savedAt)}` : ''}.`
-    : `Pozor: lokálne uloženie v tomto prehliadači zlyhalo. Detail: ${localSaveState.errorMessage || 'neznáma chyba'}`;
+  const localSaveDetail = localSaveState.pending
+    ? 'Kontrolujem lokálnu kópiu textu aj obrázkov v tomto prehliadači…'
+    : localSaveState.ok
+      ? `Lokálna kópia vrátane obrázkov je overená v tomto prehliadači${localSaveState.savedAt ? ` · ${formatSyncTime(localSaveState.savedAt)}` : ''}.`
+      : `Pozor: lokálne uloženie textu alebo obrázkov zlyhalo. Detail: ${localSaveState.errorMessage || 'neznáma chyba'}`;
   const detailSyncDetail = [notice || syncDetail(syncState), localSaveDetail].filter(Boolean).join(' ');
-  const topbarSyncClasses = syncToneClasses(localSaveState.ok ? calmSyncState.phase : 'writeError');
-  const detailSyncClasses = syncToneClasses(localSaveState.ok ? syncState.phase : 'writeError');
+  const topbarSyncClasses = syncToneClasses(localPersistenceSafe ? calmSyncState.phase : 'writeError');
+  const detailSyncClasses = syncToneClasses(localPersistenceSafe ? syncState.phase : 'writeError');
 
   const mutate = (producer) => {
     localEditRef.current = true;
