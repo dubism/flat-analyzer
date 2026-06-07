@@ -838,10 +838,20 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
 function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChange, onWidthChange, onToggle, onAddImages, onRemoveImage, onMoveImage }) {
   const fileRef = useRef(null);
   const resizeRef = useRef({ startX: 0, startWidth: DEFAULT_BOARD_WIDTH });
+  const dragStateRef = useRef({ ids: [], targetId: '', placement: 'before' });
   const [draggedId, setDraggedId] = useState('');
   const [dropActive, setDropActive] = useState(false);
+  const [dropHint, setDropHint] = useState({ targetId: '', placement: 'before' });
+  const [previewOrder, setPreviewOrder] = useState([]);
   const [imageShapes, setImageShapes] = useState({});
   const shouldStretchLandscape = mode === 'dense' && boardWidth <= 520;
+  const previewImages = useMemo(() => {
+    if (!draggedId || !previewOrder.length) return images;
+    const byId = new Map(images.map((image) => [image.id, image]));
+    const ordered = previewOrder.map((id) => byId.get(id)).filter(Boolean);
+    const orderedIds = new Set(ordered.map((image) => image.id));
+    return [...ordered, ...images.filter((image) => !orderedIds.has(image.id))];
+  }, [draggedId, images, previewOrder]);
 
   const rememberImageShape = (id, event) => {
     const { naturalWidth, naturalHeight } = event.currentTarget;
@@ -855,15 +865,61 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
     if (imageFiles.length) onAddImages(imageFiles);
   };
 
+  const moveIdForPreview = (ids, sourceId, targetId, placement = 'before') => {
+    const next = ids.filter((id) => id !== sourceId);
+    const targetIndex = next.indexOf(targetId);
+    if (targetIndex < 0) return ids;
+    next.splice(placement === 'after' ? targetIndex + 1 : targetIndex, 0, sourceId);
+    return next;
+  };
+
+  const sameOrder = (first, second) => first.length === second.length && first.every((id, index) => id === second[index]);
+
+  const clearDragPreview = () => {
+    dragStateRef.current = { ids: [], targetId: '', placement: 'before' };
+    setDraggedId('');
+    setDropHint({ targetId: '', placement: 'before' });
+    setPreviewOrder([]);
+  };
+
+  const startImageDrag = (event, imageId) => {
+    const ids = images.map((image) => image.id);
+    dragStateRef.current = { ids, targetId: imageId, placement: 'before' };
+    setDraggedId(imageId);
+    setPreviewOrder(ids);
+    setDropHint({ targetId: imageId, placement: 'before' });
+    event.dataTransfer.setData('text/plain', imageId);
+    event.dataTransfer.effectAllowed = 'move';
+  };
+
+  const previewMove = (event, targetId) => {
+    const sourceId = event.dataTransfer.getData('text/plain') || draggedId;
+    if (!sourceId || sourceId === targetId) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const placement = event.clientY > rect.top + rect.height / 2 ? 'after' : 'before';
+    const baseIds = dragStateRef.current.ids.length ? dragStateRef.current.ids : images.map((image) => image.id);
+    const nextOrder = moveIdForPreview(baseIds, sourceId, targetId, placement);
+    dragStateRef.current = { ids: nextOrder, targetId, placement };
+    setDropHint((current) => current.targetId === targetId && current.placement === placement ? current : { targetId, placement });
+    setPreviewOrder((current) => sameOrder(current, nextOrder) ? current : nextOrder);
+  };
+
   const handleDropOnBoard = (event) => {
     event.preventDefault();
     setDropActive(false);
     if (!isGlobal && event.dataTransfer.files?.length) {
       addFiles(event.dataTransfer.files);
+      clearDragPreview();
       return;
     }
 
-    setDraggedId('');
+    clearDragPreview();
+  };
+
+  const handleItemDragOver = (event, targetId) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    previewMove(event, targetId);
   };
 
   const handleItemDrop = (event, targetId) => {
@@ -871,14 +927,16 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
     event.stopPropagation();
     if (!isGlobal && event.dataTransfer.files?.length) {
       addFiles(event.dataTransfer.files);
-      setDraggedId('');
+      clearDragPreview();
       setDropActive(false);
       return;
     }
 
     const sourceId = event.dataTransfer.getData('text/plain') || draggedId;
-    setDraggedId('');
-    if (sourceId && sourceId !== targetId) onMoveImage(sourceId, targetId);
+    const { targetId: previewTargetId, placement } = dragStateRef.current;
+    clearDragPreview();
+    const finalTargetId = previewTargetId || targetId;
+    if (sourceId && sourceId !== finalTargetId) onMoveImage(sourceId, finalTargetId, placement);
   };
 
   const startResize = (event) => {
@@ -901,11 +959,21 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
     >
       <div className="pointer-events-none absolute left-0 top-20 h-12 w-1 rounded-r-full bg-stone-800 dark:bg-stone-100" />
       <div
-        className={`flex h-full w-full min-w-72 shrink-0 flex-col p-3 transition-colors ${dropActive ? 'bg-stone-100 dark:bg-stone-900' : ''}`}
-        onDragOver={(event) => { event.preventDefault(); if (!isGlobal) setDropActive(true); }}
+        className={`relative flex h-full w-full min-w-72 shrink-0 flex-col p-3 transition-colors ${dropActive ? 'bg-stone-100 ring-2 ring-inset ring-amber-300 dark:bg-stone-900' : ''}`}
+        onDragOver={(event) => {
+          event.preventDefault();
+          const hasFiles = Array.from(event.dataTransfer.types || []).includes('Files');
+          event.dataTransfer.dropEffect = hasFiles ? 'copy' : 'move';
+          if (!isGlobal && hasFiles) setDropActive(true);
+        }}
         onDragLeave={() => setDropActive(false)}
         onDrop={handleDropOnBoard}
       >
+        {dropActive ? (
+          <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-3xl border-2 border-dashed border-amber-400 bg-amber-100/80 text-sm font-semibold text-amber-950 shadow-2xl backdrop-blur-sm dark:bg-amber-900/70 dark:text-amber-50">
+            Pustite obrázky sem
+          </div>
+        ) : null}
         <div className="mb-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm dark:border-stone-800 dark:bg-stone-900">
           <div className="mb-2 flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -932,15 +1000,16 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
         </div>
 
         <div className={`min-h-0 flex-1 overflow-y-auto ${mode === 'whole' ? 'space-y-3 pr-1' : ''}`}>
-          {images.length ? (mode === 'whole' ? images.map((image, index) => (
+          {images.length ? (mode === 'whole' ? previewImages.map((image, index) => (
             <article
               key={image.id}
               draggable
-              onDragStart={(event) => { setDraggedId(image.id); event.dataTransfer.setData('text/plain', image.id); event.dataTransfer.effectAllowed = 'move'; }}
-              onDragEnd={() => setDraggedId('')}
-              onDragOver={(event) => event.preventDefault()}
+              onDragStart={(event) => startImageDrag(event, image.id)}
+              onDragEnd={clearDragPreview}
+              onDragOver={(event) => handleItemDragOver(event, image.id)}
+              onDragEnter={(event) => previewMove(event, image.id)}
               onDrop={(event) => handleItemDrop(event, image.id)}
-              className="group overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-stone-800 dark:bg-stone-900"
+              className={`group cursor-grab overflow-hidden rounded-2xl border bg-white shadow-sm transition duration-150 active:cursor-grabbing dark:bg-stone-900 ${draggedId === image.id ? 'scale-[0.98] border-amber-400 opacity-60 shadow-inner ring-2 ring-amber-300/60 dark:border-amber-300' : dropHint.targetId === image.id ? 'border-amber-400 shadow-lg ring-2 ring-amber-300/60 dark:border-amber-300' : 'border-stone-200 hover:-translate-y-0.5 hover:shadow-md dark:border-stone-800'}`}
             >
               <div className="relative bg-stone-100 dark:bg-stone-800">
                 {image.src ? (
@@ -951,14 +1020,15 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                 <div className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">{index + 1}</div>
                 {!isGlobal ? <button type="button" onClick={() => onRemoveImage(image.id)} className="absolute right-2 top-2 h-8 w-8 rounded-full bg-black/55 text-white opacity-0 transition hover:bg-red-600 group-hover:opacity-100" title="Odstrániť obrázok">×</button> : null}
               </div>
-              <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
+              <div className="relative flex items-center justify-between gap-2 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
+                {dropHint.targetId === image.id && dropHint.placement === 'after' ? <div className="absolute inset-x-3 -top-0.5 h-1 rounded-full bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.9)]" /> : null}
                 <span className="min-w-0 truncate">{image.roomName || image.name || 'Obrázok'}</span>
-                <span className="cursor-grab select-none rounded-full bg-stone-100 px-2 py-1 dark:bg-stone-800">↕ presunúť</span>
+                <span className="select-none rounded-full bg-stone-100 px-2 py-1 transition group-active:bg-amber-100 dark:bg-stone-800 dark:group-active:bg-amber-900/50">↕ chytiť</span>
               </div>
             </article>
           )) : (
             <div className="[column-gap:3px] [column-width:14rem]">
-              {images.map((image, index) => {
+              {previewImages.map((image, index) => {
                 const stretchLandscape = shouldStretchLandscape && imageShapes[image.id] === 'landscape';
 
                 return (
@@ -967,11 +1037,12 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                     type="button"
                     draggable
                     aria-label={`Presunúť obrázok ${index + 1}`}
-                    onDragStart={(event) => { setDraggedId(image.id); event.dataTransfer.setData('text/plain', image.id); event.dataTransfer.effectAllowed = 'move'; }}
-                    onDragEnd={() => setDraggedId('')}
-                    onDragOver={(event) => event.preventDefault()}
+                    onDragStart={(event) => startImageDrag(event, image.id)}
+                    onDragEnd={clearDragPreview}
+                    onDragOver={(event) => handleItemDragOver(event, image.id)}
+                    onDragEnter={(event) => previewMove(event, image.id)}
                     onDrop={(event) => handleItemDrop(event, image.id)}
-                    className={`mb-[2px] block w-full break-inside-avoid overflow-hidden p-0 leading-none ${stretchLandscape ? '[column-span:all]' : ''} ${draggedId === image.id ? 'opacity-50' : ''}`}
+                    className={`relative mb-[2px] block w-full cursor-grab break-inside-avoid overflow-hidden p-0 leading-none transition duration-150 active:cursor-grabbing ${stretchLandscape ? '[column-span:all]' : ''} ${draggedId === image.id ? 'scale-[0.98] opacity-55 ring-2 ring-amber-300/70' : ''} ${dropHint.targetId === image.id ? 'ring-2 ring-amber-300/70' : ''}`}
                   >
                     {image.src ? (
                       <img src={image.src} alt="" onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" />
@@ -1273,26 +1344,26 @@ export default function FlatNotesAppV2() {
     if (selectedId === 'global') return;
     updateCollection('images', (images) => images.filter((image) => image.id !== id));
   };
-  const moveInOrder = (ids, sourceId, targetId) => {
+  const moveInOrder = (ids, sourceId, targetId, placement = 'before') => {
     const next = ids.filter((id) => id !== sourceId);
     const targetIndex = next.indexOf(targetId);
     if (targetIndex < 0) return ids;
-    next.splice(targetIndex, 0, sourceId);
+    next.splice(placement === 'after' ? targetIndex + 1 : targetIndex, 0, sourceId);
     return next;
   };
-  const moveBoardImage = (sourceId, targetId) => {
+  const moveBoardImage = (sourceId, targetId, placement = 'before') => {
     if (selectedId === 'global') {
       mutate((prev) => {
         const allIds = prev.rooms.flatMap((room) => arr(room.images).map((image) => image.id));
         const ordered = arr(prev.global?.imageOrder).filter((id) => allIds.includes(id));
         const ids = [...ordered, ...allIds.filter((id) => !ordered.includes(id))];
-        return { ...prev, global: { ...prev.global, imageOrder: moveInOrder(ids, sourceId, targetId) } };
+        return { ...prev, global: { ...prev.global, imageOrder: moveInOrder(ids, sourceId, targetId, placement) } };
       });
       return;
     }
     updateCollection('images', (images) => {
       const byId = new Map(images.map((image) => [image.id, image]));
-      return moveInOrder(images.map((image) => image.id), sourceId, targetId).map((id) => byId.get(id)).filter(Boolean);
+      return moveInOrder(images.map((image) => image.id), sourceId, targetId, placement).map((id) => byId.get(id)).filter(Boolean);
     });
   };
   const addRoom = (name) => mutate((prev) => {
