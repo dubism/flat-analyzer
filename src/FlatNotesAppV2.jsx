@@ -690,7 +690,7 @@ function TaskList({ tasks, onAdd, onToggle, onRename, onDelete }) {
           placeholder="Pridať úlohu"
           className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-base text-stone-900 outline-none placeholder:text-stone-400 focus:border-stone-400 focus:bg-white focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:border-stone-500 dark:focus:ring-stone-700"
         />
-        <Button type="submit" className="border-stone-800 bg-stone-800 text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white">Pridať</Button>
+        <Button type="submit" className="border-stone-800 bg-stone-800 !text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:!text-stone-900 dark:hover:bg-white">Pridať</Button>
       </form>
       <div className="space-y-2">
         {tasks.length ? tasks.map((task) => (
@@ -736,16 +736,32 @@ function LinkList({ links, onAdd, onChange, onDelete }) {
       <form onSubmit={submit} className="mb-4 grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
         <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Názov" className={inputClass} />
         <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://..." inputMode="url" className={inputClass} />
-        <Button type="submit" className="border-stone-800 bg-stone-800 text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white">Pridať</Button>
+        <Button type="submit" className="border-stone-800 bg-stone-800 !text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:!text-stone-900 dark:hover:bg-white">Pridať</Button>
       </form>
       <div className="space-y-3">
         {links.length ? links.map((link) => (
           <div key={link.id} className="rounded-xl border border-stone-100 bg-stone-50 p-3 dark:border-stone-800 dark:bg-stone-950">
-            <div className="mb-2 flex gap-2">
-              <input value={link.title} onChange={(event) => onChange(link.id, { title: event.target.value })} className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700" />
+            <div className="mb-2 flex items-center gap-2">
+              {link.url ? (
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 flex-1 truncate rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-blue-300 dark:focus:ring-stone-700"
+                  title={link.title || 'Odkaz'}
+                >
+                  {link.title || 'Odkaz'}
+                </a>
+              ) : (
+                <input
+                  value={link.title}
+                  onChange={(event) => onChange(link.id, { title: event.target.value })}
+                  placeholder="Odkaz"
+                  className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700"
+                />
+              )}
               <button type="button" onClick={() => onDelete(link.id)} className="h-9 w-9 rounded-lg text-stone-400 hover:bg-white hover:text-red-600 dark:hover:bg-stone-900">×</button>
             </div>
-            <input value={link.url} onChange={(event) => onChange(link.id, { url: event.target.value })} placeholder="URL" className="mb-2 w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700" />
             <textarea value={link.notes} onChange={(event) => onChange(link.id, { notes: event.target.value })} placeholder="Poznámka k odkazu" rows={2} className="w-full resize-none rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700" />
           </div>
         )) : <p className="rounded-xl bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:bg-stone-950 dark:text-stone-400">Zatiaľ nie sú pridané žiadne odkazy.</p>}
@@ -993,7 +1009,7 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
           ) : null}
           {!isGlobal ? (
             <>
-              <Button onClick={() => fileRef.current?.click()} className="mt-3 w-full border-stone-800 bg-stone-800 text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white">Pridať obrázky</Button>
+              <Button onClick={() => fileRef.current?.click()} className="mt-3 w-full border-stone-800 bg-stone-800 !text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:!text-stone-900 dark:hover:bg-white">Pridať obrázky</Button>
               <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />
             </>
           ) : null}
@@ -1105,7 +1121,7 @@ function MobileMoodBoard({ title, images, isGlobal, mode, onModeChange, onAddIma
         </div>
         {!isGlobal ? (
           <>
-            <Button onClick={() => fileRef.current?.click()} className="shrink-0 border-stone-800 bg-stone-800 text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white">Pridať</Button>
+            <Button onClick={() => fileRef.current?.click()} className="shrink-0 border-stone-800 bg-stone-800 !text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:!text-stone-900 dark:hover:bg-white">Pridať</Button>
             <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />
           </>
         ) : null}
