@@ -221,6 +221,7 @@ const normalizeNotebook = (value) => {
     title: value.title || 'Poznámky k bytu',
     global: normalizeSection(value.global),
     rooms: rooms.length ? rooms : fallback.rooms,
+    deletedRoomIds: arr(value.deletedRoomIds).map(String),
     updatedAt: value.updatedAt || Date.now(),
   };
 };
@@ -410,13 +411,14 @@ const mergeNotebooks = (localNotebook, remoteNotebook) => {
   const local = normalizeNotebook(localNotebook);
   const remote = normalizeNotebook(remoteNotebook);
   const preferLocalText = (local.updatedAt || 0) >= (remote.updatedAt || 0);
+  const deletedRoomIds = new Set([...arr(remote.deletedRoomIds), ...arr(local.deletedRoomIds)].map(String));
   const roomKey = (room) => {
     const nameKey = slugifyId(room.name);
     return nameKey ? `name:${nameKey}` : room.id;
   };
-  const roomsById = new Map(remote.rooms.map((room) => [roomKey(room), room]));
+  const roomsById = new Map(remote.rooms.filter((room) => !deletedRoomIds.has(room.id)).map((room) => [roomKey(room), room]));
 
-  local.rooms.forEach((localRoom) => {
+  local.rooms.filter((room) => !deletedRoomIds.has(room.id)).forEach((localRoom) => {
     const remoteRoom = roomsById.get(roomKey(localRoom));
     if (!remoteRoom) {
       roomsById.set(roomKey(localRoom), localRoom);
@@ -441,6 +443,7 @@ const mergeNotebooks = (localNotebook, remoteNotebook) => {
     title: preferLocalText ? (local.title || remote.title) : (remote.title || local.title),
     global: mergeNotebookSections(local.global, remote.global, preferLocalText),
     rooms: [...roomsById.values()],
+    deletedRoomIds: [...deletedRoomIds],
     updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0, Date.now()),
   });
 };
@@ -800,17 +803,20 @@ function LinkList({ links, onAdd, onChange, onDelete }) {
   );
 }
 
-function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDelete, onAddRoom }) {
+function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDelete, onAddRoom, onMoveRoom }) {
   const selectedRoomCardClasses = 'border-amber-500 bg-amber-100 text-stone-950 shadow-[inset_4px_0_0_rgb(245,158,11),0_10px_24px_rgba(245,158,11,0.2)] ring-2 ring-amber-300 dark:border-amber-300 dark:bg-amber-500/20 dark:text-amber-50 dark:shadow-[inset_4px_0_0_rgb(252,211,77),0_10px_24px_rgba(245,158,11,0.28)] dark:ring-amber-400/50';
   const idleRoomCardClasses = 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800';
   const [newRoom, setNewRoom] = useState('');
+  const [addingRoom, setAddingRoom] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState(null);
+  const [draggedRoomId, setDraggedRoomId] = useState('');
   const submit = (event) => {
     event.preventDefault();
     const name = newRoom.trim();
     if (!name) return;
     onAddRoom(name);
     setNewRoom('');
+    setAddingRoom(false);
   };
   const taskSummary = (room) => {
     const count = openTaskCount(room);
@@ -836,10 +842,15 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
             <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-200" title={taskSummary(globalSection)}>{openTaskCount(globalSection)}</span>
           ) : null}
         </button>
-        <form onSubmit={submit} className="flex gap-2">
-          <input value={newRoom} onChange={(event) => setNewRoom(event.target.value)} placeholder="Nová miestnosť" className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-base text-stone-900 outline-none focus:border-stone-400 focus:bg-white focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:ring-stone-700" />
-          <Button type="submit">Pridať</Button>
-        </form>
+        <div className="relative">
+          <Button onClick={() => setAddingRoom(true)} className="w-full border-dashed bg-stone-50 text-stone-700 hover:bg-white dark:bg-stone-950 dark:text-stone-200">+ Pridať miestnosť</Button>
+          {addingRoom ? (
+            <form onSubmit={submit} className="absolute left-0 right-0 top-12 z-20 rounded-2xl border border-stone-200 bg-white p-3 shadow-xl dark:border-stone-700 dark:bg-stone-950">
+              <input autoFocus value={newRoom} onChange={(event) => setNewRoom(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAddingRoom(false); setNewRoom(''); } }} placeholder="Nová miestnosť" className="mb-2 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-base text-stone-900 outline-none focus:border-stone-400 focus:bg-white focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700" />
+              <div className="flex gap-2"><Button type="submit" className="flex-1">Pridať</Button><Button onClick={() => { setAddingRoom(false); setNewRoom(''); }} className="flex-1">Zrušiť</Button></div>
+            </form>
+          ) : null}
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <div className="space-y-2">
@@ -849,7 +860,8 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
             const activeTasks = openTaskCount(room);
 
             return (
-              <div key={room.id} className={`group flex items-center gap-2 rounded-2xl border px-3 py-2 transition ${isSelected ? selectedRoomCardClasses : idleRoomCardClasses}`}>
+              <div key={room.id} draggable={!isEditing} onDragStart={(event) => { setDraggedRoomId(room.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', room.id); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedRoomId; if (sourceId && sourceId !== room.id) onMoveRoom(sourceId, room.id); setDraggedRoomId(''); }} onDragEnd={() => setDraggedRoomId('')} className={`group flex items-center gap-2 rounded-2xl border px-3 py-2 transition ${draggedRoomId === room.id ? 'opacity-50' : ''} ${isSelected ? selectedRoomCardClasses : idleRoomCardClasses}`}>
+                <span className="cursor-grab select-none text-stone-300 active:cursor-grabbing dark:text-stone-600" title="Potiahnutím zmeníte poradie">⋮⋮</span>
                 {isEditing ? (
                   <input
                     value={room.name}
@@ -1495,10 +1507,14 @@ export default function FlatNotesAppV2() {
     return { ...prev, rooms: [...prev.rooms, room] };
   });
   const renameRoom = (id, name) => mutate((prev) => ({ ...prev, rooms: prev.rooms.map((room) => room.id === id ? { ...room, name } : room) }));
+  const moveRoom = (sourceId, targetId) => mutate((prev) => ({
+    ...prev,
+    rooms: moveInOrder(prev.rooms.map((room) => room.id), sourceId, targetId).map((id) => prev.rooms.find((room) => room.id === id)).filter(Boolean),
+  }));
   const deleteRoom = (id) => mutate((prev) => {
     const rooms = prev.rooms.filter((room) => room.id !== id);
     if (selectedId === id) setSelectedId('global');
-    return { ...prev, rooms: rooms.length ? rooms : createNotebook().rooms };
+    return { ...prev, rooms: rooms.length ? rooms : createNotebook().rooms, deletedRoomIds: [...new Set([...arr(prev.deletedRoomIds), id])] };
   });
 
   const download = (content, filename) => {
@@ -1634,7 +1650,7 @@ export default function FlatNotesAppV2() {
       </header>
       <div className="flex min-h-0 flex-1">
         <div className="hidden md:block">
-          <RoomList rooms={notebook.rooms} globalSection={notebook.global} selectedId={selectedId} onSelect={setSelectedId} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} />
+          <RoomList rooms={notebook.rooms} globalSection={notebook.global} selectedId={selectedId} onSelect={setSelectedId} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} onMoveRoom={moveRoom} />
         </div>
         {!boardOpen ? (
           <button type="button" onClick={() => setBoardOpen(true)} className="group hidden w-12 shrink-0 border-r border-amber-300 bg-gradient-to-b from-amber-300 via-orange-300 to-rose-300 text-xs font-black uppercase tracking-[0.25em] text-stone-950 shadow-[0_0_24px_rgba(251,191,36,0.45)] [writing-mode:vertical-rl] hover:from-amber-200 hover:to-rose-200 dark:border-amber-500 dark:from-amber-500 dark:via-orange-500 dark:to-rose-500 dark:text-stone-950 md:block"><span className="inline-block animate-pulse group-hover:animate-none">Moodboard ✦</span></button>
@@ -1643,7 +1659,7 @@ export default function FlatNotesAppV2() {
         {mobileNav ? (
           <div className="fixed inset-0 z-50 flex bg-black/40 md:hidden" onClick={() => setMobileNav(false)}>
             <div className="w-[88vw] max-w-sm" onClick={(event) => event.stopPropagation()}>
-              <RoomList rooms={notebook.rooms} globalSection={notebook.global} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileNav(false); }} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} />
+              <RoomList rooms={notebook.rooms} globalSection={notebook.global} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileNav(false); }} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} onMoveRoom={moveRoom} />
             </div>
           </div>
         ) : null}
