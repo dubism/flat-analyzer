@@ -1072,6 +1072,82 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
   );
 }
 
+function MobileMoodBoard({ title, images, isGlobal, mode, onModeChange, onAddImages, onRemoveImage, onMoveImage }) {
+  const fileRef = useRef(null);
+  const [imageShapes, setImageShapes] = useState({});
+  const shouldStretchLandscape = mode === 'dense';
+  const rememberImageShape = (id, event) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+    if (!naturalWidth || !naturalHeight) return;
+    const shape = naturalWidth / naturalHeight >= 1.18 ? 'landscape' : 'default';
+    setImageShapes((current) => current[id] === shape ? current : { ...current, [id]: shape });
+  };
+  const addFiles = (files) => {
+    const imageFiles = Array.from(files || []).filter((file) => file.type?.startsWith('image/'));
+    if (imageFiles.length) onAddImages(imageFiles);
+  };
+  const moveImageByStep = (index, step) => {
+    const target = images[index + step];
+    const source = images[index];
+    if (!source || !target) return;
+    onMoveImage(source.id, target.id, step > 0 ? 'after' : 'before');
+  };
+
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/20 md:hidden">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">Moodboard</p>
+          <h3 className="truncate text-lg font-semibold text-stone-900 dark:text-stone-100">{title}</h3>
+          <p className="mt-1 text-sm leading-5 text-stone-600 dark:text-stone-300">
+            {isGlobal ? 'Prehľad obrázkov zo všetkých miestností.' : 'Rovnaké obrázky ako na desktope, optimalizované pre dotyk.'}
+          </p>
+        </div>
+        {!isGlobal ? (
+          <>
+            <Button onClick={() => fileRef.current?.click()} className="shrink-0 border-stone-800 bg-stone-800 text-white hover:bg-stone-700 dark:border-stone-200 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-white">Pridať</Button>
+            <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />
+          </>
+        ) : null}
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-white/80 p-1 dark:bg-stone-950/80">
+        <button type="button" onClick={() => onModeChange('whole')} className={`min-h-10 rounded-lg px-2 py-2 text-sm font-semibold transition ${mode === 'whole' ? 'bg-stone-900 text-white shadow-sm dark:bg-stone-100 dark:text-stone-900' : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'}`}>Celé fotky</button>
+        <button type="button" onClick={() => onModeChange('dense')} className={`min-h-10 rounded-lg px-2 py-2 text-sm font-semibold transition ${mode === 'dense' ? 'bg-stone-900 text-white shadow-sm dark:bg-stone-100 dark:text-stone-900' : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'}`}>Dense</button>
+      </div>
+      {images.length ? (mode === 'whole' ? (
+        <div className="space-y-3">
+          {images.map((image, index) => (
+            <article key={image.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm dark:border-stone-800 dark:bg-stone-900">
+              <div className="relative bg-stone-100 dark:bg-stone-800">
+                {image.src ? <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[70dvh] w-full object-contain" /> : <div className="flex min-h-40 items-center justify-center p-4 text-center text-sm font-medium text-red-700 dark:text-red-200">Obrázok sa nepodarilo obnoviť z lokálneho úložiska.</div>}
+                <div className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">{index + 1}</div>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
+                <span className="min-w-0 flex-1 truncate">{image.roomName || image.name || 'Obrázok'}</span>
+                <button type="button" onClick={() => moveImageByStep(index, -1)} disabled={index === 0} className="h-9 w-9 rounded-lg bg-stone-100 text-base disabled:opacity-30 dark:bg-stone-800" aria-label="Posunúť obrázok vyššie">↑</button>
+                <button type="button" onClick={() => moveImageByStep(index, 1)} disabled={index === images.length - 1} className="h-9 w-9 rounded-lg bg-stone-100 text-base disabled:opacity-30 dark:bg-stone-800" aria-label="Posunúť obrázok nižšie">↓</button>
+                {!isGlobal ? <button type="button" onClick={() => onRemoveImage(image.id)} className="h-9 w-9 rounded-lg bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-200" aria-label="Odstrániť obrázok">×</button> : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="columns-2 gap-1">
+          {images.map((image, index) => (
+            <div key={image.id} className={`mb-1 break-inside-avoid overflow-hidden rounded-xl bg-white dark:bg-stone-900 ${shouldStretchLandscape && imageShapes[image.id] === 'landscape' ? '[column-span:all]' : ''}`}>
+              {image.src ? <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" /> : <span className="block border border-red-200 bg-red-50 p-3 text-xs font-medium leading-5 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">Chýba lokálny obrázok</span>}
+            </div>
+          ))}
+        </div>
+      )) : (
+        <div className="rounded-2xl border border-dashed border-amber-300 bg-white/80 px-4 py-8 text-center text-sm text-stone-600 dark:border-amber-800 dark:bg-stone-900/80 dark:text-stone-300">
+          {isGlobal ? 'Zatiaľ nie sú pridané žiadne obrázky v miestnostiach.' : 'Zatiaľ prázdny moodboard. Použite Pridať a nahrajte obrázky priamo z mobilu.'}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function TextModal({ value, onChange, onClose, onCopy, onDownload, onImport, onReset }) {
   return (
     <div className="fixed inset-0 z-[70] flex bg-black/50 p-3 md:items-center md:justify-center" onClick={onClose}>
@@ -1538,7 +1614,8 @@ export default function FlatNotesAppV2() {
 
               </div>
             </section>
-            <div className="grid gap-4 lg:grid-cols-[1.25fr_0.9fr]">
+            <MobileMoodBoard title={selectedTitle} images={boardImages} isGlobal={selectedId === 'global'} mode={boardMode} onModeChange={setBoardMode} onAddImages={addBoardImages} onRemoveImage={removeBoardImage} onMoveImage={moveBoardImage} />
+            <div className="mt-4 grid gap-4 lg:mt-0 lg:grid-cols-[1.25fr_0.9fr]">
               <div className="space-y-4">
                 <TextAreaCard label="Poznámky" value={current.notes || ''} placeholder={selectedId === 'global' ? 'Poznámky pre celý byt: rozpočet, termíny, kontakty, obmedzenia…' : 'Poznámky k miestnosti: problémy, nápady, veci na overenie…'} rows={10} onChange={(notes) => patchCurrent({ notes })} />
                 {selectedId !== 'global' ? (
