@@ -1824,7 +1824,13 @@ export default function FlatOfferAnalyzer() {
   const containerRef = useRef(null);
 
   // Firebase sync state
-  const [roomId, setRoomId] = useState(null);
+  const [roomId, setRoomId] = useState(() => {
+    try {
+      return localStorage.getItem('flat-analyzer-active-room') || null;
+    } catch {
+      return null;
+    }
+  });
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [syncStatus, setSyncStatus] = useState('disconnected'); // 'disconnected' | 'connected' | 'error'
   const remoteUpdateRef = useRef(false);
@@ -1898,11 +1904,13 @@ export default function FlatOfferAnalyzer() {
         url.searchParams.delete('room');
         window.history.replaceState({}, '', url);
       }
+      try { localStorage.removeItem('flat-analyzer-active-room'); } catch { /* ignore localStorage errors */ }
       return;
     }
 
     setSyncStatus('connected');
     initialSyncDoneRef.current = false;
+    try { localStorage.setItem('flat-analyzer-active-room', roomId); } catch { /* ignore localStorage errors */ }
 
     // Put room in URL so it's shareable
     const url = new URL(window.location);
