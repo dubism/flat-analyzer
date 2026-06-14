@@ -16,6 +16,7 @@ const BOARD_OPEN_STORAGE_KEY = 'flat-notes-board-open';
 const BOARD_MODE_STORAGE_KEY = 'flat-notes-board-mode';
 const BOARD_WIDTH_STORAGE_KEY = 'flat-notes-board-width';
 const DEFAULT_ROOM = 'flat-notes-shared';
+const ROOM_STORAGE_KEY = 'flat-notes-active-room';
 
 const SYNC_COPY = {
   local: {
@@ -141,10 +142,18 @@ const SLOVAK_FIELD_LABELS = Object.fromEntries(
   Object.entries(FIELD_LABELS).map(([field, label]) => [label, field]),
 );
 
+const slugifyId = (value) => String(value || '')
+  .trim()
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-|-$/g, '');
+const makeStableId = (prefix, value) => `${prefix}_${slugifyId(value) || 'item'}`;
 const makeId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const emptySection = () => ({ notes: '', links: [], tasks: [], imageOrder: [] });
 const emptyRoom = (name) => ({
-  id: makeId('room'),
+  id: makeStableId('room', name),
   name,
   notes: '',
   measurements: '',
@@ -401,15 +410,19 @@ const mergeNotebooks = (localNotebook, remoteNotebook) => {
   const local = normalizeNotebook(localNotebook);
   const remote = normalizeNotebook(remoteNotebook);
   const preferLocalText = (local.updatedAt || 0) >= (remote.updatedAt || 0);
-  const roomsById = new Map(remote.rooms.map((room) => [room.id, room]));
+  const roomKey = (room) => {
+    const nameKey = slugifyId(room.name);
+    return nameKey ? `name:${nameKey}` : room.id;
+  };
+  const roomsById = new Map(remote.rooms.map((room) => [roomKey(room), room]));
 
   local.rooms.forEach((localRoom) => {
-    const remoteRoom = roomsById.get(localRoom.id);
+    const remoteRoom = roomsById.get(roomKey(localRoom));
     if (!remoteRoom) {
-      roomsById.set(localRoom.id, localRoom);
+      roomsById.set(roomKey(localRoom), localRoom);
       return;
     }
-    roomsById.set(localRoom.id, {
+    roomsById.set(roomKey(localRoom), {
       ...remoteRoom,
       ...localRoom,
       name: preferLocalText ? (localRoom.name || remoteRoom.name) : (remoteRoom.name || localRoom.name),
@@ -430,6 +443,23 @@ const mergeNotebooks = (localNotebook, remoteNotebook) => {
     rooms: [...roomsById.values()],
     updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0, Date.now()),
   });
+};
+
+const loadStoredRoom = () => {
+  try {
+    return (localStorage.getItem(ROOM_STORAGE_KEY) || '').trim().toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+const saveStoredRoom = (room) => {
+  try {
+    if (room) localStorage.setItem(ROOM_STORAGE_KEY, room);
+    else localStorage.removeItem(ROOM_STORAGE_KEY);
+  } catch {
+    // Ignore localStorage errors.
+  }
 };
 
 const getHashRoom = () => {
@@ -1196,7 +1226,7 @@ function TextModal({ value, onChange, onClose, onCopy, onDownload, onImport, onR
 export default function FlatNotesAppV2() {
   const [notebook, setNotebook] = useState(loadNotebook);
   const [selectedId, setSelectedId] = useState('global');
-  const [roomCode, setRoomCode] = useState(() => getHashRoom() || DEFAULT_ROOM);
+  const [roomCode, setRoomCode] = useState(() => getHashRoom() || loadStoredRoom() || DEFAULT_ROOM);
   const [joinCode, setJoinCode] = useState('');
   const [syncState, setSyncState] = useState({ phase: 'connecting' });
   const [localSaveState, setLocalSaveState] = useState({ ok: true, pending: true, savedAt: 0, errorMessage: '' });
@@ -1294,6 +1324,7 @@ export default function FlatNotesAppV2() {
 
     firstRemoteRef.current = true;
     setHashRoom(roomCode);
+    saveStoredRoom(roomCode);
     setSyncState({ phase: 'connecting' });
 
     return subscribeToNotesRoom(
