@@ -390,6 +390,21 @@ const saveNotebook = async (notebook) => {
   }
 };
 
+const sortImagesByOrder = (images, order) => {
+  const cleanImages = arr(images);
+  const imageIds = new Set(cleanImages.map((image) => image.id));
+  const cleanOrder = arr(order).filter((id) => imageIds.has(id));
+  if (!cleanOrder.length) return cleanImages;
+
+  const position = new Map(cleanOrder.map((id, index) => [id, index]));
+  return [...cleanImages].sort((a, b) => {
+    const aPosition = position.has(a.id) ? position.get(a.id) : Number.MAX_SAFE_INTEGER;
+    const bPosition = position.has(b.id) ? position.get(b.id) : Number.MAX_SAFE_INTEGER;
+    if (aPosition !== bPosition) return aPosition - bPosition;
+    return (a.addedAt || 0) - (b.addedAt || 0);
+  });
+};
+
 const mergeImages = (localImages, remoteImages) => {
   const merged = new Map();
   arr(remoteImages).forEach((image) => merged.set(image.id, image));
@@ -398,6 +413,13 @@ const mergeImages = (localImages, remoteImages) => {
     merged.set(image.id, existing ? { ...existing, ...image, src: image.src || existing.src } : image);
   });
   return [...merged.values()].sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
+};
+
+const mergeImageOrder = (preferredOrder, fallbackOrder, images) => {
+  const imageIds = arr(images).map((image) => image.id);
+  const validIds = new Set(imageIds);
+  return [...arr(preferredOrder), ...arr(fallbackOrder), ...imageIds]
+    .filter((id, index, order) => validIds.has(id) && order.indexOf(id) === index);
 };
 
 const mergeNotebookSections = (localSection = {}, remoteSection = {}, preferLocalText) => ({
@@ -426,6 +448,9 @@ const mergeNotebooks = (localNotebook, remoteNotebook) => {
       roomsById.set(roomKey(localRoom), localRoom);
       return;
     }
+    const images = mergeImages(localRoom.images, remoteRoom.images);
+    const preferredRoom = preferLocalText ? localRoom : remoteRoom;
+    const fallbackRoom = preferLocalText ? remoteRoom : localRoom;
     roomsById.set(roomKey(localRoom), {
       ...remoteRoom,
       ...localRoom,
@@ -435,7 +460,8 @@ const mergeNotebooks = (localNotebook, remoteNotebook) => {
       decisions: preferLocalText ? (localRoom.decisions || remoteRoom.decisions || '') : (remoteRoom.decisions || localRoom.decisions || ''),
       links: preferLocalText ? arr(localRoom.links) : arr(remoteRoom.links).length ? arr(remoteRoom.links) : arr(localRoom.links),
       tasks: preferLocalText ? arr(localRoom.tasks) : arr(remoteRoom.tasks).length ? arr(remoteRoom.tasks) : arr(localRoom.tasks),
-      images: mergeImages(localRoom.images, remoteRoom.images),
+      images,
+      imageOrder: mergeImageOrder(preferredRoom.imageOrder, fallbackRoom.imageOrder, images),
     });
   });
 
@@ -1481,17 +1507,9 @@ export default function FlatNotesAppV2() {
   );
   const selectedTitle = selectedId === 'global' ? 'Celý byt' : current.name;
   const boardImages = useMemo(() => {
-    if (selectedId !== 'global') return arr(current.images);
+    if (selectedId !== 'global') return sortImagesByOrder(current.images, current.imageOrder);
     const merged = notebook.rooms.flatMap((room) => arr(room.images).map((image) => ({ ...image, roomId: room.id, roomName: room.name })));
-    const order = arr(notebook.global?.imageOrder);
-    if (!order.length) return merged;
-    const position = new Map(order.map((id, index) => [id, index]));
-    return [...merged].sort((a, b) => {
-      const aPosition = position.has(a.id) ? position.get(a.id) : Number.MAX_SAFE_INTEGER;
-      const bPosition = position.has(b.id) ? position.get(b.id) : Number.MAX_SAFE_INTEGER;
-      if (aPosition !== bPosition) return aPosition - bPosition;
-      return (a.addedAt || 0) - (b.addedAt || 0);
-    });
+    return sortImagesByOrder(merged, notebook.global?.imageOrder);
   }, [current, notebook.global?.imageOrder, notebook.rooms, selectedId]);
   const groupLabel = roomCode || 'lokálne';
   const calmSyncState = topbarSyncState(syncState);
@@ -1529,12 +1547,28 @@ export default function FlatNotesAppV2() {
     if (!images.length) return;
     mutate((prev) => ({
       ...prev,
-      rooms: prev.rooms.map((room) => room.id === targetRoomId ? { ...room, images: [...arr(room.images), ...images] } : room),
+      rooms: prev.rooms.map((room) => room.id === targetRoomId ? {
+        ...room,
+        images: [...arr(room.images), ...images],
+        imageOrder: [...arr(room.imageOrder), ...images.map((image) => image.id)],
+      } : room),
     }));
   };
   const removeBoardImage = (id) => {
     if (selectedId === 'global') return;
-    updateCollection('images', (images) => images.filter((image) => image.id !== id));
+    const targetRoomId = selectedId;
+    mutate((prev) => ({
+      ...prev,
+      rooms: prev.rooms.map((room) => room.id === targetRoomId ? {
+        ...room,
+        images: arr(room.images).filter((image) => image.id !== id),
+        imageOrder: arr(room.imageOrder).filter((imageId) => imageId !== id),
+      } : room),
+      global: {
+        ...prev.global,
+        imageOrder: arr(prev.global?.imageOrder).filter((imageId) => imageId !== id),
+      },
+    }));
   };
   const moveInOrder = (ids, sourceId, targetId, placement = 'before') => {
     const next = ids.filter((id) => id !== sourceId);
@@ -1569,11 +1603,12 @@ export default function FlatNotesAppV2() {
       ...prev,
       rooms: prev.rooms.map((room) => {
         if (room.id !== targetRoomId) return room;
-        const images = arr(room.images);
-        const byId = new Map(images.map((image) => [image.id, image]));
+        const allIds = arr(room.images).map((image) => image.id);
+        const ordered = arr(room.imageOrder).filter((id) => allIds.includes(id));
+        const ids = [...ordered, ...allIds.filter((id) => !ordered.includes(id))];
         return {
           ...room,
-          images: moveInOrder(images.map((image) => image.id), sourceId, targetId, placement).map((id) => byId.get(id)).filter(Boolean),
+          imageOrder: moveInOrder(ids, sourceId, targetId, placement),
         };
       }),
     }));
