@@ -195,6 +195,7 @@ const normalizeImages = (images) => arr(images).map((image) => {
     name: image.name || '',
     addedAt: image.addedAt || Date.now(),
     missing: Boolean(image.missing && !src),
+    priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
   };
 }).filter((image) => image.src || image.srcRef);
 const normalizeSection = (section = {}) => ({
@@ -251,6 +252,7 @@ const stripNotebookImagePayloads = (notebook) => normalizeNotebook({
       name: image.name || '',
       addedAt: image.addedAt || Date.now(),
       missing: Boolean(image.missing && !image.src),
+      priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
     })),
   })),
 });
@@ -893,8 +895,10 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
 
 
 
-function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChange, onWidthChange, onToggle, onAddImages, onRemoveImage, onMoveImage }) {
+function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChange, onWidthChange, onToggle, onAddImages, onRemoveImage, onMoveImage, onAdjustImagePriority }) {
   const fileRef = useRef(null);
+  const scrollerRef = useRef(null);
+  const autoScrollRef = useRef(0);
   const resizeRef = useRef({ startX: 0, startWidth: DEFAULT_BOARD_WIDTH });
   const dragStateRef = useRef({ ids: [], targetId: '', placement: 'before' });
   const [draggedId, setDraggedId] = useState('');
@@ -903,6 +907,14 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
   const [previewOrder, setPreviewOrder] = useState([]);
   const [imageShapes, setImageShapes] = useState({});
   const shouldStretchLandscape = mode === 'dense' && boardWidth <= 520;
+  const priorityLabel = (priority = 0) => priority > 0 ? `+${priority}` : String(priority);
+  const denseSpanClass = (image) => {
+    const priority = Number(image.priority) || 0;
+    if (priority >= 2) return '[column-span:all]';
+    if (priority >= 1 && imageShapes[image.id] === 'landscape') return '[column-span:all]';
+    if (shouldStretchLandscape && imageShapes[image.id] === 'landscape') return '[column-span:all]';
+    return '';
+  };
   const previewImages = useMemo(() => {
     if (!draggedId || !previewOrder.length) return images;
     const byId = new Map(images.map((image) => [image.id, image]));
@@ -933,7 +945,32 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
 
   const sameOrder = (first, second) => first.length === second.length && first.every((id, index) => id === second[index]);
 
+  const stopAutoScroll = () => {
+    if (autoScrollRef.current) window.cancelAnimationFrame(autoScrollRef.current);
+    autoScrollRef.current = 0;
+  };
+
+  const maybeAutoScroll = (event) => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !draggedId) return;
+    const rect = scroller.getBoundingClientRect();
+    const edge = 96;
+    const topDistance = event.clientY - rect.top;
+    const bottomDistance = rect.bottom - event.clientY;
+    let speed = 0;
+    if (topDistance < edge) speed = -Math.max(2, Math.round((edge - topDistance) / 7));
+    if (bottomDistance < edge) speed = Math.max(2, Math.round((edge - bottomDistance) / 7));
+    stopAutoScroll();
+    if (!speed) return;
+    const tick = () => {
+      scroller.scrollTop += speed;
+      autoScrollRef.current = window.requestAnimationFrame(tick);
+    };
+    autoScrollRef.current = window.requestAnimationFrame(tick);
+  };
+
   const clearDragPreview = () => {
+    stopAutoScroll();
     dragStateRef.current = { ids: [], targetId: '', placement: 'before' };
     setDraggedId('');
     setDropHint({ targetId: '', placement: 'before' });
@@ -951,6 +988,7 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
   };
 
   const previewMove = (event, targetId) => {
+    maybeAutoScroll(event);
     const sourceId = event.dataTransfer.getData('text/plain') || draggedId;
     if (!sourceId || sourceId === targetId) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -971,7 +1009,10 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
       return;
     }
 
+    const sourceId = event.dataTransfer.getData('text/plain') || draggedId;
+    const { targetId: previewTargetId, placement } = dragStateRef.current;
     clearDragPreview();
+    if (sourceId && previewTargetId && sourceId !== previewTargetId) onMoveImage(sourceId, previewTargetId, placement);
   };
 
   const handleItemDragOver = (event, targetId) => {
@@ -1057,7 +1098,7 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
           ) : null}
         </div>
 
-        <div className={`min-h-0 flex-1 overflow-y-auto ${mode === 'whole' ? 'space-y-3 pr-1' : ''}`}>
+        <div ref={scrollerRef} className={`min-h-0 flex-1 overflow-y-auto scroll-smooth ${mode === 'whole' ? 'space-y-3 pr-1' : ''}`}>
           {images.length ? (mode === 'whole' ? previewImages.map((image, index) => (
             <article
               key={image.id}
@@ -1076,7 +1117,12 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                   <div className="flex min-h-40 items-center justify-center p-4 text-center text-sm font-medium text-red-700 dark:text-red-200">Obrázok sa nepodarilo obnoviť z lokálneho úložiska.</div>
                 )}
                 <div className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">{index + 1}</div>
-                {!isGlobal ? <button type="button" onClick={() => onRemoveImage(image.id)} className="absolute right-2 top-2 h-8 w-8 rounded-full bg-black/55 text-white opacity-0 transition hover:bg-red-600 group-hover:opacity-100" title="Odstrániť obrázok">×</button> : null}
+                <div className="absolute right-2 top-2 flex overflow-hidden rounded-full border border-white/40 bg-black/45 text-white opacity-0 shadow-lg backdrop-blur transition group-hover:opacity-100" title="Priorita veľkosti: vyššia priorita dostane väčší / celý riadok">
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onAdjustImagePriority?.(image.id, -1); }} className="h-7 w-7 text-sm hover:bg-white/20" aria-label="Znížiť prioritu veľkosti">−</button>
+                  <span className="flex h-7 min-w-7 items-center justify-center px-1 text-[11px] font-bold">{priorityLabel(image.priority)}</span>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onAdjustImagePriority?.(image.id, 1); }} className="h-7 w-7 text-sm hover:bg-white/20" aria-label="Zvýšiť prioritu veľkosti">+</button>
+                </div>
+                {!isGlobal ? <button type="button" onClick={() => onRemoveImage(image.id)} className="absolute bottom-2 right-2 h-8 w-8 rounded-full bg-black/55 text-white opacity-0 transition hover:bg-red-600 group-hover:opacity-100" title="Odstrániť obrázok">×</button> : null}
               </div>
               <div className="relative flex items-center justify-between gap-2 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
                 {dropHint.targetId === image.id && dropHint.placement === 'after' ? <div className="absolute inset-x-3 -top-0.5 h-1 rounded-full bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.9)]" /> : null}
@@ -1087,12 +1133,13 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
           )) : (
             <div className="[column-gap:3px] [column-width:14rem]">
               {previewImages.map((image, index) => {
-                const stretchLandscape = shouldStretchLandscape && imageShapes[image.id] === 'landscape';
+                const stretchLandscape = denseSpanClass(image);
 
                 return (
-                  <button
+                  <div
                     key={image.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     draggable
                     aria-label={`Presunúť obrázok ${index + 1}`}
                     onDragStart={(event) => startImageDrag(event, image.id)}
@@ -1100,14 +1147,17 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                     onDragOver={(event) => handleItemDragOver(event, image.id)}
                     onDragEnter={(event) => previewMove(event, image.id)}
                     onDrop={(event) => handleItemDrop(event, image.id)}
-                    className={`relative mb-[2px] block w-full cursor-grab break-inside-avoid overflow-hidden p-0 leading-none transition duration-150 active:cursor-grabbing ${stretchLandscape ? '[column-span:all]' : ''} ${draggedId === image.id ? 'scale-[0.98] opacity-55 ring-2 ring-amber-300/70' : ''} ${dropHint.targetId === image.id ? 'ring-2 ring-amber-300/70' : ''}`}
+                    className={`group relative mb-[2px] block w-full cursor-grab break-inside-avoid overflow-hidden p-0 leading-none transition duration-150 active:cursor-grabbing ${stretchLandscape} ${draggedId === image.id ? 'scale-[0.98] opacity-55 ring-2 ring-amber-300/70' : ''} ${dropHint.targetId === image.id ? 'ring-2 ring-amber-300/70' : ''}`}
                   >
+                    <div className="absolute right-1 top-1 z-10 flex overflow-hidden rounded-full bg-black/40 text-white opacity-0 backdrop-blur transition group-hover:opacity-100">
+                      <button type="button" onClick={(event) => { event.stopPropagation(); onAdjustImagePriority?.(image.id, -1); }} className="h-6 w-6 text-xs hover:bg-white/20">−</button><span className="flex h-6 min-w-6 items-center justify-center text-[10px] font-bold">{priorityLabel(image.priority)}</span><button type="button" onClick={(event) => { event.stopPropagation(); onAdjustImagePriority?.(image.id, 1); }} className="h-6 w-6 text-xs hover:bg-white/20">+</button>
+                    </div>
                     {image.src ? (
                       <img src={image.src} alt="" onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" />
                     ) : (
                       <span className="block rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium leading-5 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">Chýba lokálny obrázok</span>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -1486,6 +1536,17 @@ export default function FlatNotesAppV2() {
     next.splice(placement === 'after' ? targetIndex + 1 : targetIndex, 0, sourceId);
     return next;
   };
+
+  const adjustImagePriority = (id, delta) => {
+    const applyPriority = (image) => image.id === id
+      ? { ...image, priority: Math.max(-2, Math.min(3, (Number(image.priority) || 0) + delta)) }
+      : image;
+    mutate((prev) => ({
+      ...prev,
+      rooms: prev.rooms.map((room) => ({ ...room, images: arr(room.images).map(applyPriority) })),
+    }));
+  };
+
   const moveBoardImage = (sourceId, targetId, placement = 'before') => {
     if (selectedId === 'global') {
       mutate((prev) => {
@@ -1655,7 +1716,7 @@ export default function FlatNotesAppV2() {
         {!boardOpen ? (
           <button type="button" onClick={() => setBoardOpen(true)} className="group hidden w-12 shrink-0 border-r border-amber-300 bg-gradient-to-b from-amber-300 via-orange-300 to-rose-300 text-xs font-black uppercase tracking-[0.25em] text-stone-950 shadow-[0_0_24px_rgba(251,191,36,0.45)] [writing-mode:vertical-rl] hover:from-amber-200 hover:to-rose-200 dark:border-amber-500 dark:from-amber-500 dark:via-orange-500 dark:to-rose-500 dark:text-stone-950 md:block"><span className="inline-block animate-pulse group-hover:animate-none">Moodboard ✦</span></button>
         ) : null}
-        <MoodBoard open={boardOpen} title={selectedTitle} images={boardImages} isGlobal={selectedId === 'global'} mode={boardMode} boardWidth={boardWidth} onModeChange={setBoardMode} onWidthChange={setBoardWidth} onToggle={() => setBoardOpen(false)} onAddImages={addBoardImages} onRemoveImage={removeBoardImage} onMoveImage={moveBoardImage} />
+        <MoodBoard open={boardOpen} title={selectedTitle} images={boardImages} isGlobal={selectedId === 'global'} mode={boardMode} boardWidth={boardWidth} onModeChange={setBoardMode} onWidthChange={setBoardWidth} onToggle={() => setBoardOpen(false)} onAddImages={addBoardImages} onRemoveImage={removeBoardImage} onMoveImage={moveBoardImage} onAdjustImagePriority={adjustImagePriority} />
         {mobileNav ? (
           <div className="fixed inset-0 z-50 flex bg-black/40 md:hidden" onClick={() => setMobileNav(false)}>
             <div className="w-[88vw] max-w-sm" onClick={(event) => event.stopPropagation()}>
