@@ -957,9 +957,16 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
     const edge = 96;
     const topDistance = event.clientY - rect.top;
     const bottomDistance = rect.bottom - event.clientY;
+    const minSpeed = 2;
+    const maxSpeed = 20;
+    const scrollSpeed = (distance) => {
+      const intensity = Math.max(0, Math.min(1, (edge - distance) / edge));
+      if (!intensity) return 0;
+      return Math.round(minSpeed + (maxSpeed - minSpeed) * (intensity ** 1.6));
+    };
     let speed = 0;
-    if (topDistance < edge) speed = -Math.max(2, Math.round((edge - topDistance) / 7));
-    if (bottomDistance < edge) speed = Math.max(2, Math.round((edge - bottomDistance) / 7));
+    if (topDistance < edge) speed = -scrollSpeed(topDistance);
+    if (bottomDistance < edge) speed = scrollSpeed(bottomDistance);
     stopAutoScroll();
     if (!speed) return;
     const tick = () => {
@@ -1557,10 +1564,19 @@ export default function FlatNotesAppV2() {
       });
       return;
     }
-    updateCollection('images', (images) => {
-      const byId = new Map(images.map((image) => [image.id, image]));
-      return moveInOrder(images.map((image) => image.id), sourceId, targetId, placement).map((id) => byId.get(id)).filter(Boolean);
-    });
+    const targetRoomId = selectedId;
+    mutate((prev) => ({
+      ...prev,
+      rooms: prev.rooms.map((room) => {
+        if (room.id !== targetRoomId) return room;
+        const images = arr(room.images);
+        const byId = new Map(images.map((image) => [image.id, image]));
+        return {
+          ...room,
+          images: moveInOrder(images.map((image) => image.id), sourceId, targetId, placement).map((id) => byId.get(id)).filter(Boolean),
+        };
+      }),
+    }));
   };
   const addRoom = (name) => mutate((prev) => {
     const room = emptyRoom(name);
