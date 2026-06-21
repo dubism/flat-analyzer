@@ -4,6 +4,7 @@ import {
   initNotesFirebase,
   isNotesFirebaseConfigured,
   subscribeToNotesRoom,
+  uploadNoteImage,
   writeNotesRoom,
 } from './notesFirebase';
 
@@ -76,7 +77,12 @@ const describeError = (error) => {
   return `${code}${error.message || String(error)}`;
 };
 
-const describeFirebaseError = describeError;
+const describeFirebaseError = (error) => {
+  if (error?.code === 'storage/unauthorized') {
+    return 'Firebase Storage odmietol nahratie obrázka (storage/unauthorized). Skontrolujte Firebase Storage Rules.';
+  }
+  return describeError(error);
+};
 
 const syncLabel = (sync) => {
   const base = sync.message || SYNC_COPY[sync.phase]?.label || 'Synchronizácia';
@@ -198,8 +204,12 @@ const normalizeImages = (images) => arr(images).map((image) => {
   return {
     id,
     src,
+    url: image.url || '',
+    storagePath: image.storagePath || '',
+    width: image.width || 0,
+    height: image.height || 0,
     srcRef,
-    storage: image.storage || (src ? 'inline' : 'indexeddb'),
+    storage: image.storage || (image.url || image.storagePath ? 'firebase-storage' : (src ? 'inline' : 'indexeddb')),
     name: image.name || '',
     addedAt: image.addedAt || Date.now(),
     missing: Boolean(image.missing && !src),
@@ -278,13 +288,31 @@ const stripNotebookImagePayloads = (notebook) => normalizeNotebook({
     images: arr(room.images).map((image) => ({
       id: image.id,
       srcRef: image.srcRef || image.id,
-      storage: image.storage === 'missing' ? 'missing' : 'indexeddb',
+      url: image.url || '',
+      storagePath: image.storagePath || '',
+      width: image.width || 0,
+      height: image.height || 0,
+      storage: image.url || image.storagePath ? 'firebase-storage' : (image.storage === 'missing' ? 'missing' : 'indexeddb'),
       name: image.name || '',
       addedAt: image.addedAt || Date.now(),
       missing: Boolean(image.missing && !image.src),
       priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
     })),
   })),
+});
+
+const stripImageForCloudMetadata = (image) => ({
+  id: image.id,
+  srcRef: image.srcRef || image.id,
+  url: image.url || '',
+  storagePath: image.storagePath || '',
+  width: image.width || 0,
+  height: image.height || 0,
+  storage: image.url || image.storagePath ? 'firebase-storage' : (image.storage === 'missing' ? 'missing' : 'indexeddb'),
+  name: image.name || '',
+  addedAt: image.addedAt || Date.now(),
+  missing: Boolean(image.missing && !image.src && !image.url),
+  priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
 });
 
 const notebookWithSyncableImages = (notebook) => normalizeNotebook({
@@ -295,6 +323,10 @@ const notebookWithSyncableImages = (notebook) => normalizeNotebook({
       id: image.id,
       src: image.src || '',
       srcRef: image.srcRef || image.id,
+      url: image.url || '',
+      storagePath: image.storagePath || '',
+      width: image.width || 0,
+      height: image.height || 0,
       storage: image.src ? 'inline' : (image.storage === 'missing' ? 'missing' : 'indexeddb'),
       name: image.name || '',
       addedAt: image.addedAt || Date.now(),
@@ -303,6 +335,34 @@ const notebookWithSyncableImages = (notebook) => normalizeNotebook({
     })),
   })),
 });
+
+const summarizeImagesForDebug = (notebook) => ({
+  rooms: arr(notebook?.rooms).map((room) => ({
+    room: room.name,
+    images: arr(room.images).map((image) => ({
+      id: image.id,
+      hasSrc: Boolean(image.src),
+      hasUrl: Boolean(image.url),
+      storage: image.storage,
+      missing: image.missing,
+      srcLength: image.src?.length || 0,
+      srcRef: image.srcRef,
+      storagePath: image.storagePath || '',
+    })),
+  })),
+});
+
+const imageDebugEnabled = () => {
+  try {
+    return new URLSearchParams(window.location.search).get('debugImages') === '1';
+  } catch {
+    return false;
+  }
+};
+
+const debugImages = (label, notebook) => {
+  if (imageDebugEnabled()) console.info(`[FlatNotes image sync] ${label}`, summarizeImagesForDebug(notebook));
+};
 
 const openImageDb = () => new Promise((resolve, reject) => {
   if (!('indexedDB' in window)) {
@@ -375,7 +435,8 @@ const loadNotebookImages = async (notebook) => {
     rooms: normalized.rooms.map((room) => ({
       ...room,
       images: arr(room.images).map((image) => {
-        if (image.src) return { ...image, storage: 'indexeddb', srcRef: image.srcRef || image.id };
+        if (image.src) return { ...image, storage: image.url || image.storagePath ? 'firebase-storage' : 'indexeddb', srcRef: image.srcRef || image.id };
+        if (image.url) return { ...image, storage: 'firebase-storage', missing: false };
         const stored = byId.get(image.srcRef || image.id);
         if (!stored?.src) return { ...image, storage: 'missing', missing: true };
         return {
@@ -442,7 +503,40 @@ const writeSyncNotebook = async (roomCode, notebook) => {
   const localImagesSaved = await saveNotebook(notebook);
   if (!localImagesSaved.ok) throw new Error(localImagesSaved.errorMessage || 'Lokálne uloženie obrázkov pred cloud sync zlyhalo.');
   const hydrated = await loadNotebookImages(notebook);
-  return writeNotesRoom(roomCode, notebookWithSyncableImages(hydrated));
+  debugImages('before cloud prepare', hydrated);
+  const payload = await prepareNotebookForCloud(roomCode, hydrated);
+  debugImages('before Realtime Database write', payload);
+  return writeNotesRoom(roomCode, payload);
+};
+
+const prepareNotebookForCloud = async (roomCode, notebook) => {
+  const hydrated = normalizeNotebook(notebook);
+  const rooms = await Promise.all(hydrated.rooms.map(async (room) => ({
+    ...room,
+    images: await Promise.all(arr(room.images).map(async (image) => {
+      if (image.url || image.storagePath) return stripImageForCloudMetadata(image);
+      if (!image.src) return stripImageForCloudMetadata(image);
+
+      const uploaded = await uploadNoteImage(roomCode, image);
+      return stripImageForCloudMetadata({
+        ...image,
+        url: uploaded.url,
+        storagePath: uploaded.storagePath,
+        storage: 'firebase-storage',
+        missing: false,
+      });
+    })),
+  })));
+
+  return normalizeNotebook({ ...hydrated, rooms });
+};
+
+const missingRenderableImageIds = (notebook) => {
+  const ids = [];
+  forEachNotebookImage(notebook, (image) => {
+    if (!image.src && !image.url) ids.push(image.id);
+  });
+  return ids;
 };
 
 const sortImagesByOrder = (images, order) => {
@@ -465,7 +559,7 @@ const mergeImages = (localImages, remoteImages) => {
   arr(remoteImages).forEach((image) => merged.set(image.id, image));
   arr(localImages).forEach((image) => {
     const existing = merged.get(image.id);
-    merged.set(image.id, existing ? { ...existing, ...image, src: image.src || existing.src } : image);
+    merged.set(image.id, existing ? { ...existing, ...image, src: image.src || existing.src, url: image.url || existing.url, storagePath: image.storagePath || existing.storagePath } : image);
   });
   return [...merged.values()].sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
 };
@@ -1188,7 +1282,9 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
         </div>
 
         <div ref={scrollerRef} className={`min-h-0 flex-1 overflow-y-auto scroll-smooth ${mode === 'whole' ? 'space-y-3 pr-1' : ''}`}>
-          {images.length ? (mode === 'whole' ? previewImages.map((image, index) => (
+          {images.length ? (mode === 'whole' ? previewImages.map((image, index) => {
+            const displaySrc = image.src || image.url;
+            return (
             <article
               key={image.id}
               draggable
@@ -1200,8 +1296,8 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
               className={`group cursor-grab overflow-hidden rounded-2xl border bg-white shadow-sm transition duration-150 active:cursor-grabbing dark:bg-stone-900 ${draggedId === image.id ? 'scale-[0.98] border-amber-400 opacity-60 shadow-inner ring-2 ring-amber-300/60 dark:border-amber-300' : dropHint.targetId === image.id ? 'border-amber-400 shadow-lg ring-2 ring-amber-300/60 dark:border-amber-300' : 'border-stone-200 hover:-translate-y-0.5 hover:shadow-md dark:border-stone-800'}`}
             >
               <div className="relative bg-stone-100 dark:bg-stone-800">
-                {image.src ? (
-                  <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[32rem] w-full object-contain" />
+                {displaySrc ? (
+                  <img src={displaySrc} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[32rem] w-full object-contain" />
                 ) : (
                   <div className="flex min-h-40 items-center justify-center p-4 text-center text-sm font-medium text-red-700 dark:text-red-200">Obrázok sa nepodarilo obnoviť z lokálneho úložiska.</div>
                 )}
@@ -1219,10 +1315,12 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                 <span className="select-none rounded-full bg-stone-100 px-2 py-1 transition group-active:bg-amber-100 dark:bg-stone-800 dark:group-active:bg-amber-900/50">↕ chytiť</span>
               </div>
             </article>
-          )) : (
+            );
+          }) : (
             <div className="[column-gap:3px] [column-width:14rem]">
               {previewImages.map((image, index) => {
                 const stretchLandscape = denseSpanClass(image);
+                const displaySrc = image.src || image.url;
 
                 return (
                   <div
@@ -1241,8 +1339,8 @@ function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChan
                     <div className="absolute right-1 top-1 z-10 flex overflow-hidden rounded-full bg-black/40 text-white opacity-0 backdrop-blur transition group-hover:opacity-100">
                       <button type="button" onClick={(event) => { event.stopPropagation(); onAdjustImagePriority?.(image.id, -1); }} className="h-6 w-6 text-xs hover:bg-white/20">−</button><span className="flex h-6 min-w-6 items-center justify-center text-[10px] font-bold">{priorityLabel(image.priority)}</span><button type="button" onClick={(event) => { event.stopPropagation(); onAdjustImagePriority?.(image.id, 1); }} className="h-6 w-6 text-xs hover:bg-white/20">+</button>
                     </div>
-                    {image.src ? (
-                      <img src={image.src} alt="" onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" />
+                    {displaySrc ? (
+                      <img src={displaySrc} alt="" onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" />
                     ) : (
                       <span className="block rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium leading-5 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">Chýba lokálny obrázok</span>
                     )}
@@ -1313,10 +1411,12 @@ function MobileMoodBoard({ title, images, isGlobal, mode, onModeChange, onAddIma
       </div>
       {images.length ? (mode === 'whole' ? (
         <div className="space-y-3">
-          {images.map((image, index) => (
+          {images.map((image, index) => {
+            const displaySrc = image.src || image.url;
+            return (
             <article key={image.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm dark:border-stone-800 dark:bg-stone-900">
               <div className="relative bg-stone-100 dark:bg-stone-800">
-                {image.src ? <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[70dvh] w-full object-contain" /> : <div className="flex min-h-40 items-center justify-center p-4 text-center text-sm font-medium text-red-700 dark:text-red-200">Obrázok sa nepodarilo obnoviť z lokálneho úložiska.</div>}
+                {displaySrc ? <img src={displaySrc} alt={image.name || `Moodboard ${index + 1}`} className="max-h-[70dvh] w-full object-contain" /> : <div className="flex min-h-40 items-center justify-center p-4 text-center text-sm font-medium text-red-700 dark:text-red-200">Obrázok sa nepodarilo obnoviť z lokálneho úložiska.</div>}
                 <div className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-medium text-white">{index + 1}</div>
               </div>
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
@@ -1326,15 +1426,19 @@ function MobileMoodBoard({ title, images, isGlobal, mode, onModeChange, onAddIma
                 {!isGlobal ? <button type="button" onClick={() => onRemoveImage(image.id)} className="h-9 w-9 rounded-lg bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-200" aria-label="Odstrániť obrázok">×</button> : null}
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="columns-2 gap-1">
-          {images.map((image, index) => (
+          {images.map((image, index) => {
+            const displaySrc = image.src || image.url;
+            return (
             <div key={image.id} className={`mb-1 break-inside-avoid overflow-hidden rounded-xl bg-white dark:bg-stone-900 ${shouldStretchLandscape && imageShapes[image.id] === 'landscape' ? '[column-span:all]' : ''}`}>
-              {image.src ? <img src={image.src} alt={image.name || `Moodboard ${index + 1}`} onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" /> : <span className="block border border-red-200 bg-red-50 p-3 text-xs font-medium leading-5 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">Chýba lokálny obrázok</span>}
+              {displaySrc ? <img src={displaySrc} alt={image.name || `Moodboard ${index + 1}`} onLoad={(event) => rememberImageShape(image.id, event)} className="block h-auto w-full" /> : <span className="block border border-red-200 bg-red-50 p-3 text-xs font-medium leading-5 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">Chýba lokálny obrázok</span>}
             </div>
-          ))}
+            );
+          })}
         </div>
       )) : (
         <div className="rounded-2xl border border-dashed border-amber-300 bg-white/80 px-4 py-8 text-center text-sm text-stone-600 dark:border-amber-800 dark:bg-stone-900/80 dark:text-stone-300">
@@ -1430,6 +1534,7 @@ export default function FlatNotesAppV2() {
     loadNotebookImages(notebookRef.current)
       .then((hydrated) => {
         if (cancelled) return;
+        debugImages('after startup IndexedDB hydration', hydrated);
         setNotebook((current) => {
           const currentIds = notebookImageIds(current).join('|');
           const hydratedIds = notebookImageIds(hydrated).join('|');
@@ -1520,6 +1625,7 @@ export default function FlatNotesAppV2() {
         }
 
         const remoteNotebook = normalizeNotebook(remote);
+        debugImages('Firebase onValue', remoteNotebook);
         const first = firstRemoteRef.current;
         firstRemoteRef.current = false;
         localEditRef.current = false;
@@ -1527,9 +1633,16 @@ export default function FlatNotesAppV2() {
         setNotebook((current) => {
           if (first) {
             localEditRef.current = true;
-            return mergeNotebooks(current, remoteNotebook);
+            const merged = mergeNotebooks(current, remoteNotebook);
+            debugImages('after first remote merge', merged);
+            return merged;
           }
-          return (remoteNotebook.updatedAt || 0) >= (current.updatedAt || 0) ? mergeNotebooks(current, remoteNotebook) : current;
+          if ((remoteNotebook.updatedAt || 0) >= (current.updatedAt || 0)) {
+            const merged = mergeNotebooks(current, remoteNotebook);
+            debugImages('after remote merge', merged);
+            return merged;
+          }
+          return current;
         });
         setSyncState({ phase: 'synced', lastSuccessAt: Date.now() });
       },
@@ -1572,20 +1685,29 @@ export default function FlatNotesAppV2() {
     const merged = notebook.rooms.flatMap((room) => arr(room.images).map((image) => ({ ...image, roomId: room.id, roomName: room.name })));
     return sortImagesByOrder(merged, notebook.global?.imageOrder);
   }, [current, notebook.global?.imageOrder, notebook.rooms, selectedId]);
+  const missingImageCount = useMemo(() => missingRenderableImageIds(notebook).length, [notebook]);
   const groupLabel = roomCode || 'lokálne';
-  const calmSyncState = topbarSyncState(syncState);
+  const imageAwareSyncState = syncState.phase === 'synced' && missingImageCount
+    ? {
+      ...syncState,
+      phase: 'imageWarning',
+      message: `Text synchronizovaný, ${missingImageCount} obrázkov chýba`,
+      detail: `Firebase potvrdil text a metadata, ale ${missingImageCount} obrázkov nemá dostupný lokálny ani cloudový zdroj. Otvorte skupinu v prehliadači s pôvodnými obrázkami alebo ich nahrajte znova.`,
+    }
+    : syncState;
+  const calmSyncState = topbarSyncState(imageAwareSyncState);
   const topbarSyncLabel = notice || compactSyncLabel(calmSyncState);
   const localPersistenceSafe = localSaveState.ok && !localSaveState.pending;
-  const topbarSyncDetail = localPersistenceSafe ? (notice || syncDetail(syncState)) : 'Lokálne uloženie textu a obrázkov sa ešte overuje alebo zlyhalo.';
-  const detailSyncLabel = notice || syncLabel(syncState);
+  const topbarSyncDetail = localPersistenceSafe ? (notice || syncDetail(imageAwareSyncState)) : 'Lokálne uloženie textu a obrázkov sa ešte overuje alebo zlyhalo.';
+  const detailSyncLabel = notice || syncLabel(imageAwareSyncState);
   const localSaveDetail = localSaveState.pending
     ? 'Kontrolujem lokálnu kópiu textu aj obrázkov v tomto prehliadači…'
     : localSaveState.ok
       ? `Lokálna kópia vrátane obrázkov je overená v tomto prehliadači${localSaveState.savedAt ? ` · ${formatSyncTime(localSaveState.savedAt)}` : ''}.`
       : `Pozor: lokálne uloženie textu alebo obrázkov zlyhalo. Detail: ${localSaveState.errorMessage || 'neznáma chyba'}`;
-  const detailSyncDetail = [notice || syncDetail(syncState), localSaveDetail].filter(Boolean).join(' ');
+  const detailSyncDetail = [notice || syncDetail(imageAwareSyncState), localSaveDetail].filter(Boolean).join(' ');
   const topbarSyncClasses = syncToneClasses(localPersistenceSafe ? calmSyncState.phase : 'writeError');
-  const detailSyncClasses = syncToneClasses(localPersistenceSafe ? syncState.phase : 'writeError');
+  const detailSyncClasses = syncToneClasses(localPersistenceSafe ? imageAwareSyncState.phase : 'writeError');
 
   const mutate = (producer) => {
     localEditRef.current = true;
@@ -1793,6 +1915,30 @@ export default function FlatNotesAppV2() {
     setJoinCode('');
     setShareMenuOpen(false);
   };
+  const repairImageSync = async () => {
+    if (!roomCode) return;
+    setSyncState((currentState) => ({ phase: 'saving', lastSuccessAt: currentState.lastSuccessAt }));
+    try {
+      const hydrated = await loadNotebookImages(notebookRef.current);
+      const recoverable = missingRenderableImageIds(notebookRef.current).filter((id) => {
+        let found = false;
+        forEachNotebookImage(hydrated, (image) => {
+          if (image.id === id && image.src) found = true;
+        });
+        return found;
+      }).length;
+      await writeSyncNotebook(roomCode, hydrated);
+      setNotebook(hydrated);
+      const stillMissing = missingRenderableImageIds(hydrated).length;
+      setSyncState({ phase: 'synced', lastSuccessAt: Date.now() });
+      showNotice(recoverable
+        ? `Oprava nahrala ${recoverable} obrázkov. Chýba ešte ${stillMissing}.`
+        : `V tomto prehliadači sa nenašli pôvodné obrázky. Chýba ${stillMissing}.`);
+    } catch (error) {
+      setSyncState({ phase: 'writeError', errorMessage: describeFirebaseError(error) });
+      showNotice('Oprava obrázkov zlyhala');
+    }
+  };
   const sharedPage = () => { setRoomCode(DEFAULT_ROOM); setHashRoom(DEFAULT_ROOM); setShareMenuOpen(false); };
   const toggleTheme = () => setTheme((currentTheme) => currentTheme === 'dark' ? 'light' : 'dark');
 
@@ -1840,6 +1986,7 @@ export default function FlatNotesAppV2() {
                     <Button onClick={copyShare} className="w-full">Kopírovať odkaz</Button>
                     {roomCode !== DEFAULT_ROOM ? <Button onClick={sharedPage} className="w-full">Zdieľaná stránka</Button> : null}
                     <Button onClick={createRoom} className="w-full">Nová skupina</Button>
+                    <Button onClick={repairImageSync} className="w-full">Opraviť obrázky</Button>
                   </div>
                   <form onSubmit={joinRoom} className="mt-3 flex gap-2">
                     <input value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Kód skupiny" className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-base text-stone-900 outline-none placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:ring-stone-700" />
