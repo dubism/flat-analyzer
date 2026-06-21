@@ -1,5 +1,6 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getDatabase, ref, set, onValue } from 'firebase/database';
+import { getStorage, ref as storageRef, uploadString, getDownloadURL } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyALEpqIjz60SdvmcTpvpMPLhwnR7-viNl8",
@@ -13,6 +14,7 @@ const firebaseConfig = {
 };
 
 let db = null;
+let storage = null;
 
 export const isNotesFirebaseConfigured = () => !!firebaseConfig.apiKey && !!firebaseConfig.databaseURL;
 
@@ -26,11 +28,25 @@ export function initNotesFirebase() {
       ? getApp(appName)
       : initializeApp(firebaseConfig, appName);
     db = getDatabase(app);
+    storage = getStorage(app);
     return db;
   } catch (error) {
     console.error('Flat notes Firebase init failed:', error);
     return null;
   }
+}
+
+export function uploadNoteImage(roomId, image) {
+  if (!storage || !roomId || !image?.id || !image?.src) {
+    return Promise.reject(new Error('Firebase Storage nie je pripravený alebo obrázok nemá dáta.'));
+  }
+
+  const extension = image.src.startsWith('data:image/png') ? 'png' : 'jpg';
+  const path = `roomNotesImages/${roomId}/${image.id}.${extension}`;
+  const imageRef = storageRef(storage, path);
+  return uploadString(imageRef, image.src, 'data_url')
+    .then(() => getDownloadURL(imageRef))
+    .then((url) => ({ storagePath: path, url }));
 }
 
 export function generateNotesRoomCode() {
