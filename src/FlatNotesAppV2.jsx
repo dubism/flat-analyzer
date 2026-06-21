@@ -152,8 +152,13 @@ const slugifyId = (value) => String(value || '')
 const makeStableId = (prefix, value) => `${prefix}_${slugifyId(value) || 'item'}`;
 const makeId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const emptySection = () => ({ notes: '', links: [], tasks: [], imageOrder: [] });
-const emptyRoom = (name) => ({
+const emptyCategory = (name) => ({
+  id: makeId('category'),
+  name,
+});
+const emptyRoom = (name, categoryId = '') => ({
   id: makeStableId('room', name),
+  categoryId,
   name,
   notes: '',
   measurements: '',
@@ -167,6 +172,7 @@ const createNotebook = () => ({
   title: 'Poznámky k bytu',
   global: emptySection(),
   rooms: STARTER_ROOMS.map(emptyRoom),
+  categories: [],
   updatedAt: Date.now(),
 });
 const arr = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
@@ -207,7 +213,8 @@ const normalizeSection = (section = {}) => ({
 const normalizeRoom = (room = {}) => ({
   ...normalizeSection(room),
   id: room.id || makeId('room'),
-  name: room.name || 'Miestnosť',
+  name: room.name || 'Položka',
+  categoryId: room.categoryId || '',
   measurements: room.measurements || '',
   decisions: room.decisions || '',
   images: normalizeImages(room.images),
@@ -217,11 +224,19 @@ const normalizeNotebook = (value) => {
   const fallback = createNotebook();
   if (!value || typeof value !== 'object') return fallback;
   const rooms = arr(value.rooms).map(normalizeRoom);
+  const categories = arr(value.categories).map((category) => {
+    const normalizedCategory = {
+      id: category.id || makeId('category'),
+      name: category.name || 'Kategória',
+    };
+    return normalizedCategory;
+  });
   return {
     version: 2,
     title: value.title || 'Poznámky k bytu',
     global: normalizeSection(value.global),
     rooms: rooms.length ? rooms : fallback.rooms,
+    categories,
     deletedRoomIds: arr(value.deletedRoomIds).map(String),
     updatedAt: value.updatedAt || Date.now(),
   };
@@ -455,6 +470,7 @@ const mergeNotebooks = (localNotebook, remoteNotebook) => {
       ...remoteRoom,
       ...localRoom,
       name: preferLocalText ? (localRoom.name || remoteRoom.name) : (remoteRoom.name || localRoom.name),
+      categoryId: preferLocalText ? (localRoom.categoryId || remoteRoom.categoryId || '') : (remoteRoom.categoryId || localRoom.categoryId || ''),
       notes: preferLocalText ? (localRoom.notes || remoteRoom.notes || '') : (remoteRoom.notes || localRoom.notes || ''),
       measurements: preferLocalText ? (localRoom.measurements || remoteRoom.measurements || '') : (remoteRoom.measurements || localRoom.measurements || ''),
       decisions: preferLocalText ? (localRoom.decisions || remoteRoom.decisions || '') : (remoteRoom.decisions || localRoom.decisions || ''),
@@ -471,6 +487,7 @@ const mergeNotebooks = (localNotebook, remoteNotebook) => {
     title: preferLocalText ? (local.title || remote.title) : (remote.title || local.title),
     global: mergeNotebookSections(local.global, remote.global, preferLocalText),
     rooms: [...roomsById.values()],
+    categories: preferLocalText ? [...arr(remote.categories), ...arr(local.categories)].filter((category, index, all) => all.findIndex((item) => item.id === category.id) === index) : [...arr(local.categories), ...arr(remote.categories)].filter((category, index, all) => all.findIndex((item) => item.id === category.id) === index),
     deletedRoomIds: [...deletedRoomIds],
     updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0, Date.now()),
   });
@@ -684,7 +701,7 @@ Odkazy:
 
 ## Miestnosť: Kuchyňa
 Poznámky:
-Poznámky k miestnosti.
+Poznámky k položke.
 
 Rozmery:
 Šírka, zásuvky, okná, poloha radiátora...
@@ -693,7 +710,7 @@ Rozhodnutia:
 Vybrané materiály, rozloženie, otvorené otázky...
 
 Úlohy:
-- [ ] Úloha k miestnosti
+- [ ] Úloha k položke
 
 Odkazy:
 - Inšpirácia | https://example.com | Voliteľná poznámka`;
@@ -831,11 +848,13 @@ function LinkList({ links, onAdd, onChange, onDelete }) {
   );
 }
 
-function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDelete, onAddRoom, onMoveRoom }) {
+function RoomList({ rooms, categories, globalSection, selectedId, onSelect, onRename, onDelete, onAddRoom, onMoveRoom, onAddCategory, onRenameCategory, onDeleteCategory }) {
   const selectedRoomCardClasses = 'border-amber-500 bg-amber-100 text-stone-950 shadow-[inset_4px_0_0_rgb(245,158,11),0_10px_24px_rgba(245,158,11,0.2)] ring-2 ring-amber-300 dark:border-amber-300 dark:bg-amber-500/20 dark:text-amber-50 dark:shadow-[inset_4px_0_0_rgb(252,211,77),0_10px_24px_rgba(245,158,11,0.28)] dark:ring-amber-400/50';
   const idleRoomCardClasses = 'border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800';
   const [newRoom, setNewRoom] = useState('');
+  const [newCategory, setNewCategory] = useState('');
   const [addingRoom, setAddingRoom] = useState(false);
+  const [addingCategory, setAddingCategory] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState(null);
   const [draggedRoomId, setDraggedRoomId] = useState('');
   const submit = (event) => {
@@ -846,79 +865,76 @@ function RoomList({ rooms, globalSection, selectedId, onSelect, onRename, onDele
     setNewRoom('');
     setAddingRoom(false);
   };
-  const taskSummary = (room) => {
-    const count = openTaskCount(room);
+  const submitCategory = (event) => {
+    event.preventDefault();
+    const name = newCategory.trim();
+    if (!name) return;
+    onAddCategory(name);
+    setNewCategory('');
+    setAddingCategory(false);
+  };
+  const taskSummary = (item) => {
+    const count = openTaskCount(item);
     if (!count) return 'bez aktívnych úloh';
     if (count === 1) return '1 aktívna úloha';
     if (count < 5) return `${count} aktívne úlohy`;
     return `${count} aktívnych úloh`;
   };
+  const renderItem = (room) => {
+    const isSelected = selectedId === room.id;
+    const isEditing = editingRoomId === room.id;
+    const activeTasks = openTaskCount(room);
+    return (
+      <div key={room.id} draggable={!isEditing} onDragStart={(event) => { setDraggedRoomId(room.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', room.id); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedRoomId; if (sourceId && sourceId !== room.id) onMoveRoom(sourceId, room.id, room.categoryId || ''); setDraggedRoomId(''); }} onDragEnd={() => setDraggedRoomId('')} className={`group flex items-center gap-2 rounded-2xl border px-3 py-2 transition ${draggedRoomId === room.id ? 'opacity-50' : ''} ${isSelected ? selectedRoomCardClasses : idleRoomCardClasses}`}>
+        <span className="cursor-grab select-none text-stone-300 active:cursor-grabbing dark:text-stone-600" title="Potiahnutím zmeníte poradie alebo kategóriu">⋮⋮</span>
+        {isEditing ? (
+          <input value={room.name} autoFocus onChange={(event) => onRename(room.id, event.target.value)} onBlur={() => setEditingRoomId(null)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'Escape') setEditingRoomId(null); }} className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-sm font-medium text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:ring-stone-700" />
+        ) : (
+          <button type="button" onClick={() => onSelect(room.id)} className="min-w-0 flex-1 py-1 text-left">
+            <span className={`block truncate font-medium ${isSelected ? 'text-stone-950 dark:text-amber-50' : 'text-stone-900 dark:text-stone-100'}`}>{room.name}</span>
+            {activeTasks ? <span className={`block truncate text-xs ${isSelected ? 'font-medium text-amber-900 dark:text-amber-100' : 'text-stone-500 dark:text-stone-400'}`}>{taskSummary(room)}</span> : null}
+          </button>
+        )}
+        {activeTasks ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-200" title={taskSummary(room)}>{activeTasks}</span> : null}
+        <button type="button" onClick={() => setEditingRoomId(room.id)} className="h-8 w-8 rounded-lg text-stone-400 hover:bg-white hover:text-stone-700 dark:hover:bg-stone-900 dark:hover:text-stone-100" title="Premenovať položku">✎</button>
+        <button type="button" onClick={() => onDelete(room.id)} className="h-8 w-8 rounded-lg text-stone-400 hover:bg-white hover:text-red-600 dark:hover:bg-stone-900 dark:hover:text-red-400" title="Vymazať položku">×</button>
+      </div>
+    );
+  };
+  const uncategorizedRooms = rooms.filter((room) => !room.categoryId);
+  const roomsByCategory = (categoryId) => rooms.filter((room) => room.categoryId === categoryId);
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-stone-200 bg-white md:w-80 dark:border-stone-800 dark:bg-stone-900">
       <div className="border-b border-stone-200 p-3 dark:border-stone-800">
-        <button
-          type="button"
-          onClick={() => onSelect('global')}
-          className={`mb-3 flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-left transition ${selectedId === 'global' ? selectedRoomCardClasses : idleRoomCardClasses}`}
-        >
-          <span className="min-w-0">
-            <span className={`block truncate font-semibold ${selectedId === 'global' ? 'text-stone-950 dark:text-amber-50' : 'text-stone-900 dark:text-stone-100'}`}>Celý byt</span>
-            <span className={`block truncate text-xs ${selectedId === 'global' ? 'font-medium text-amber-900 dark:text-amber-100' : 'text-stone-500 dark:text-stone-400'}`}>Spoločné poznámky</span>
-          </span>
-          {openTaskCount(globalSection) ? (
-            <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-200" title={taskSummary(globalSection)}>{openTaskCount(globalSection)}</span>
-          ) : null}
+        <button type="button" onClick={() => onSelect('global')} className={`mb-3 flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-left transition ${selectedId === 'global' ? selectedRoomCardClasses : idleRoomCardClasses}`}>
+          <span className="min-w-0"><span className={`block truncate font-semibold ${selectedId === 'global' ? 'text-stone-950 dark:text-amber-50' : 'text-stone-900 dark:text-stone-100'}`}>Celý byt</span><span className={`block truncate text-xs ${selectedId === 'global' ? 'font-medium text-amber-900 dark:text-amber-100' : 'text-stone-500 dark:text-stone-400'}`}>Spoločné poznámky</span></span>
+          {openTaskCount(globalSection) ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-200" title={taskSummary(globalSection)}>{openTaskCount(globalSection)}</span> : null}
         </button>
-        <div className="relative">
-          <Button onClick={() => setAddingRoom(true)} className="w-full border-dashed bg-stone-50 text-stone-700 hover:bg-white dark:bg-stone-950 dark:text-stone-200">+ Pridať miestnosť</Button>
-          {addingRoom ? (
-            <form onSubmit={submit} className="absolute left-0 right-0 top-12 z-20 rounded-2xl border border-stone-200 bg-white p-3 shadow-xl dark:border-stone-700 dark:bg-stone-950">
-              <input autoFocus value={newRoom} onChange={(event) => setNewRoom(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAddingRoom(false); setNewRoom(''); } }} placeholder="Nová miestnosť" className="mb-2 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-base text-stone-900 outline-none focus:border-stone-400 focus:bg-white focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700" />
-              <div className="flex gap-2"><Button type="submit" className="flex-1">Pridať</Button><Button onClick={() => { setAddingRoom(false); setNewRoom(''); }} className="flex-1">Zrušiť</Button></div>
-            </form>
-          ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={() => setAddingRoom(true)} className="border-dashed bg-stone-50 text-stone-700 hover:bg-white dark:bg-stone-950 dark:text-stone-200">+ Položka</Button>
+          <Button onClick={() => setAddingCategory(true)} className="border-dashed bg-stone-50 text-stone-700 hover:bg-white dark:bg-stone-950 dark:text-stone-200">+ Kategória</Button>
         </div>
+        {addingRoom ? <form onSubmit={submit} className="mt-2 rounded-2xl border border-stone-200 bg-white p-3 shadow-xl dark:border-stone-700 dark:bg-stone-950"><input autoFocus value={newRoom} onChange={(event) => setNewRoom(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAddingRoom(false); setNewRoom(''); } }} placeholder="Nová položka" className="mb-2 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-base text-stone-900 outline-none focus:border-stone-400 focus:bg-white focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700" /><div className="flex gap-2"><Button type="submit" className="flex-1">Pridať</Button><Button onClick={() => { setAddingRoom(false); setNewRoom(''); }} className="flex-1">Zrušiť</Button></div></form> : null}
+        {addingCategory ? <form onSubmit={submitCategory} className="mt-2 rounded-2xl border border-stone-200 bg-white p-3 shadow-xl dark:border-stone-700 dark:bg-stone-950"><input autoFocus value={newCategory} onChange={(event) => setNewCategory(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAddingCategory(false); setNewCategory(''); } }} placeholder="Nová kategória" className="mb-2 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-base text-stone-900 outline-none focus:border-stone-400 focus:bg-white focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:focus:ring-stone-700" /><div className="flex gap-2"><Button type="submit" className="flex-1">Pridať</Button><Button onClick={() => { setAddingCategory(false); setNewCategory(''); }} className="flex-1">Zrušiť</Button></div></form> : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        <div className="space-y-2">
-          {rooms.map((room) => {
-            const isSelected = selectedId === room.id;
-            const isEditing = editingRoomId === room.id;
-            const activeTasks = openTaskCount(room);
-
-            return (
-              <div key={room.id} draggable={!isEditing} onDragStart={(event) => { setDraggedRoomId(room.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', room.id); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedRoomId; if (sourceId && sourceId !== room.id) onMoveRoom(sourceId, room.id); setDraggedRoomId(''); }} onDragEnd={() => setDraggedRoomId('')} className={`group flex items-center gap-2 rounded-2xl border px-3 py-2 transition ${draggedRoomId === room.id ? 'opacity-50' : ''} ${isSelected ? selectedRoomCardClasses : idleRoomCardClasses}`}>
-                <span className="cursor-grab select-none text-stone-300 active:cursor-grabbing dark:text-stone-600" title="Potiahnutím zmeníte poradie">⋮⋮</span>
-                {isEditing ? (
-                  <input
-                    value={room.name}
-                    autoFocus
-                    onChange={(event) => onRename(room.id, event.target.value)}
-                    onBlur={() => setEditingRoomId(null)}
-                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'Escape') setEditingRoomId(null); }}
-                    className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-sm font-medium text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-100 dark:focus:ring-stone-700"
-                  />
-                ) : (
-                  <button type="button" onClick={() => onSelect(room.id)} className="min-w-0 flex-1 py-1 text-left">
-                    <span className={`block truncate font-medium ${isSelected ? 'text-stone-950 dark:text-amber-50' : 'text-stone-900 dark:text-stone-100'}`}>{room.name}</span>
-                    {activeTasks ? <span className={`block truncate text-xs ${isSelected ? 'font-medium text-amber-900 dark:text-amber-100' : 'text-stone-500 dark:text-stone-400'}`}>{taskSummary(room)}</span> : null}
-                  </button>
-                )}
-                {activeTasks ? (
-                  <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-200" title={taskSummary(room)}>{activeTasks}</span>
-                ) : null}
-                <button type="button" onClick={() => setEditingRoomId(room.id)} className="h-8 w-8 rounded-lg text-stone-400 hover:bg-white hover:text-stone-700 dark:hover:bg-stone-900 dark:hover:text-stone-100" title="Premenovať miestnosť">✎</button>
-                <button type="button" onClick={() => onDelete(room.id)} className="h-8 w-8 rounded-lg text-stone-400 hover:bg-white hover:text-red-600 dark:hover:bg-stone-900 dark:hover:text-red-400" title="Vymazať miestnosť">×</button>
+        <div className="space-y-3">
+          <div className="space-y-2" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedRoomId; if (sourceId) onMoveRoom(sourceId, '', ''); setDraggedRoomId(''); }}>{uncategorizedRooms.map(renderItem)}</div>
+          {categories.map((category) => (
+            <section key={category.id} className="rounded-2xl border border-stone-200 bg-stone-50/70 p-2 dark:border-stone-700 dark:bg-stone-950/60" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedRoomId; if (sourceId) onMoveRoom(sourceId, '', category.id); setDraggedRoomId(''); }}>
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <input value={category.name} onChange={(event) => onRenameCategory(category.id, event.target.value)} className="min-w-0 flex-1 bg-transparent text-xs font-bold uppercase tracking-wide text-stone-500 outline-none dark:text-stone-400" />
+                <button type="button" onClick={() => onDeleteCategory(category.id)} className="h-7 w-7 rounded-lg text-stone-400 hover:bg-white hover:text-red-600 dark:hover:bg-stone-900" title="Vymazať kategóriu">×</button>
               </div>
-            );
-          })}
+              <div className="space-y-2">{roomsByCategory(category.id).map(renderItem)}</div>
+            </section>
+          ))}
         </div>
       </div>
     </aside>
   );
 }
-
 
 
 function MoodBoard({ open, title, images, isGlobal, mode, boardWidth, onModeChange, onWidthChange, onToggle, onAddImages, onRemoveImage, onMoveImage, onAdjustImagePriority }) {
@@ -1619,9 +1635,20 @@ export default function FlatNotesAppV2() {
     return { ...prev, rooms: [...prev.rooms, room] };
   });
   const renameRoom = (id, name) => mutate((prev) => ({ ...prev, rooms: prev.rooms.map((room) => room.id === id ? { ...room, name } : room) }));
-  const moveRoom = (sourceId, targetId) => mutate((prev) => ({
+  const moveRoom = (sourceId, targetId, categoryId = '') => mutate((prev) => {
+    const source = prev.rooms.find((room) => room.id === sourceId);
+    if (!source) return prev;
+    const movedRooms = prev.rooms.map((room) => room.id === sourceId ? { ...room, categoryId } : room);
+    const ids = movedRooms.map((room) => room.id);
+    const orderedIds = targetId ? moveInOrder(ids, sourceId, targetId) : [...ids.filter((id) => id !== sourceId), sourceId];
+    return { ...prev, rooms: orderedIds.map((id) => movedRooms.find((room) => room.id === id)).filter(Boolean) };
+  });
+  const addCategory = (name) => mutate((prev) => ({ ...prev, categories: [...arr(prev.categories), emptyCategory(name)] }));
+  const renameCategory = (id, name) => mutate((prev) => ({ ...prev, categories: arr(prev.categories).map((category) => category.id === id ? { ...category, name } : category) }));
+  const deleteCategory = (id) => mutate((prev) => ({
     ...prev,
-    rooms: moveInOrder(prev.rooms.map((room) => room.id), sourceId, targetId).map((id) => prev.rooms.find((room) => room.id === id)).filter(Boolean),
+    categories: arr(prev.categories).filter((category) => category.id !== id),
+    rooms: prev.rooms.map((room) => room.categoryId === id ? { ...room, categoryId: '' } : room),
   }));
   const deleteRoom = (id) => mutate((prev) => {
     const rooms = prev.rooms.filter((room) => room.id !== id);
@@ -1762,7 +1789,7 @@ export default function FlatNotesAppV2() {
       </header>
       <div className="flex min-h-0 flex-1">
         <div className="hidden md:block">
-          <RoomList rooms={notebook.rooms} globalSection={notebook.global} selectedId={selectedId} onSelect={setSelectedId} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} onMoveRoom={moveRoom} />
+          <RoomList rooms={notebook.rooms} categories={notebook.categories} globalSection={notebook.global} selectedId={selectedId} onSelect={setSelectedId} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} onMoveRoom={moveRoom} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} />
         </div>
         {!boardOpen ? (
           <button type="button" onClick={() => setBoardOpen(true)} className="group hidden w-12 shrink-0 border-r border-amber-300 bg-gradient-to-b from-amber-300 via-orange-300 to-rose-300 text-xs font-black uppercase tracking-[0.25em] text-stone-950 shadow-[0_0_24px_rgba(251,191,36,0.45)] [writing-mode:vertical-rl] hover:from-amber-200 hover:to-rose-200 dark:border-amber-500 dark:from-amber-500 dark:via-orange-500 dark:to-rose-500 dark:text-stone-950 md:block"><span className="inline-block animate-pulse group-hover:animate-none">Moodboard ✦</span></button>
@@ -1771,7 +1798,7 @@ export default function FlatNotesAppV2() {
         {mobileNav ? (
           <div className="fixed inset-0 z-50 flex bg-black/40 md:hidden" onClick={() => setMobileNav(false)}>
             <div className="w-[88vw] max-w-sm" onClick={(event) => event.stopPropagation()}>
-              <RoomList rooms={notebook.rooms} globalSection={notebook.global} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileNav(false); }} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} onMoveRoom={moveRoom} />
+              <RoomList rooms={notebook.rooms} categories={notebook.categories} globalSection={notebook.global} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setMobileNav(false); }} onRename={renameRoom} onDelete={deleteRoom} onAddRoom={addRoom} onMoveRoom={moveRoom} onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} />
             </div>
           </div>
         ) : null}
@@ -1781,7 +1808,7 @@ export default function FlatNotesAppV2() {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
                   <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600 dark:bg-stone-800 dark:text-stone-300">{selectedId === 'global' ? 'celý byt' : 'miestnosť'}</span>
+                    <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600 dark:bg-stone-800 dark:text-stone-300">{selectedId === 'global' ? 'celý byt' : 'položka'}</span>
                     <span className="text-xs text-stone-500 dark:text-stone-400">Aktualizované {updatedLabel(notebook.updatedAt)}</span>
                   </div>
                   <h2 className="truncate text-2xl font-semibold">{selectedTitle}</h2>
@@ -1792,7 +1819,7 @@ export default function FlatNotesAppV2() {
             <MobileMoodBoard title={selectedTitle} images={boardImages} isGlobal={selectedId === 'global'} mode={boardMode} onModeChange={setBoardMode} onAddImages={addBoardImages} onRemoveImage={removeBoardImage} onMoveImage={moveBoardImage} />
             <div className="mt-4 grid gap-4 lg:mt-0 lg:grid-cols-[1.25fr_0.9fr]">
               <div className="space-y-4">
-                <TextAreaCard label="Poznámky" value={current.notes || ''} placeholder={selectedId === 'global' ? 'Poznámky pre celý byt: rozpočet, termíny, kontakty, obmedzenia…' : 'Poznámky k miestnosti: problémy, nápady, veci na overenie…'} rows={10} onChange={(notes) => patchCurrent({ notes })} />
+                <TextAreaCard label="Poznámky" value={current.notes || ''} placeholder={selectedId === 'global' ? 'Poznámky pre celý byt: rozpočet, termíny, kontakty, obmedzenia…' : 'Poznámky: problémy, nápady, veci na overenie…'} rows={10} onChange={(notes) => patchCurrent({ notes })} />
                 {selectedId !== 'global' ? (
                   <>
                     <TextAreaCard label="Rozmery" value={current.measurements || ''} placeholder="Rozmery, zásuvky, okná, poloha radiátora, výška stropu…" rows={5} onChange={(measurements) => patchCurrent({ measurements })} />
