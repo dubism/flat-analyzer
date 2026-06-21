@@ -258,6 +258,19 @@ const notebookImageIds = (notebook) => {
   return ids;
 };
 
+const imagePayloadIds = (notebook) => {
+  const ids = [];
+  forEachNotebookImage(notebook, (image) => {
+    if (image.id && image.src) ids.push(image.id);
+  });
+  return ids;
+};
+
+const hasNewImagePayloads = (current, hydrated) => {
+  const currentPayloadIds = new Set(imagePayloadIds(current));
+  return imagePayloadIds(hydrated).some((id) => !currentPayloadIds.has(id));
+};
+
 const stripNotebookImagePayloads = (notebook) => normalizeNotebook({
   ...notebook,
   rooms: arr(notebook.rooms).map((room) => ({
@@ -1421,6 +1434,11 @@ export default function FlatNotesAppV2() {
           const currentIds = notebookImageIds(current).join('|');
           const hydratedIds = notebookImageIds(hydrated).join('|');
           if (currentIds !== hydratedIds) return current;
+          const restoredImagePayloads = hasNewImagePayloads(current, hydrated);
+          if (restoredImagePayloads) {
+            localEditRef.current = true;
+            return normalizeNotebook({ ...hydrated, updatedAt: Date.now() });
+          }
           return hydrated;
         });
       })
