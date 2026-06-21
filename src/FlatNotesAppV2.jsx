@@ -16,6 +16,8 @@ const BOARD_OPEN_STORAGE_KEY = 'flat-notes-board-open';
 const BOARD_MODE_STORAGE_KEY = 'flat-notes-board-mode';
 const BOARD_WIDTH_STORAGE_KEY = 'flat-notes-board-width';
 const DEFAULT_ROOM = 'flat-notes-shared';
+const MAX_SYNC_IMAGE_EDGE = 1600;
+const SYNC_IMAGE_QUALITY = 0.82;
 const ROOM_STORAGE_KEY = 'flat-notes-active-room';
 
 const SYNC_COPY = {
@@ -257,6 +259,23 @@ const stripNotebookImagePayloads = (notebook) => normalizeNotebook({
   })),
 });
 
+const notebookWithSyncableImages = (notebook) => normalizeNotebook({
+  ...notebook,
+  rooms: arr(notebook.rooms).map((room) => ({
+    ...room,
+    images: arr(room.images).map((image) => ({
+      id: image.id,
+      src: image.src || '',
+      srcRef: image.srcRef || image.id,
+      storage: image.src ? 'inline' : (image.storage === 'missing' ? 'missing' : 'indexeddb'),
+      name: image.name || '',
+      addedAt: image.addedAt || Date.now(),
+      missing: Boolean(image.missing && !image.src),
+      priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
+    })),
+  })),
+});
+
 const openImageDb = () => new Promise((resolve, reject) => {
   if (!('indexedDB' in window)) {
     reject(new Error('IndexedDB nie je dostupný v tomto prehliadači.'));
@@ -388,6 +407,14 @@ const saveNotebook = async (notebook) => {
     console.warn('Nepodarilo sa uložiť poznámky k bytu:', error);
     return { ok: false, savedAt: 0, errorMessage: describeError(error), missingImageIds: [] };
   }
+};
+
+
+const writeSyncNotebook = async (roomCode, notebook) => {
+  const localImagesSaved = await saveNotebook(notebook);
+  if (!localImagesSaved.ok) throw new Error(localImagesSaved.errorMessage || 'Lokálne uloženie obrázkov pred cloud sync zlyhalo.');
+  const hydrated = await loadNotebookImages(notebook);
+  return writeNotesRoom(roomCode, notebookWithSyncableImages(hydrated));
 };
 
 const sortImagesByOrder = (images, order) => {
@@ -1444,7 +1471,7 @@ export default function FlatNotesAppV2() {
         if (!remote) {
           firstRemoteRef.current = false;
           setSyncState({ phase: 'seeding' });
-          writeNotesRoom(roomCode, stripNotebookImagePayloads(notebookRef.current))
+          writeSyncNotebook(roomCode, notebookRef.current)
             .then(() => {
               const now = Date.now();
               lastRemoteRef.current = Math.max(notebookRef.current.updatedAt || 0, now);
@@ -1486,7 +1513,7 @@ export default function FlatNotesAppV2() {
     window.clearTimeout(writeTimerRef.current);
     writeTimerRef.current = window.setTimeout(() => {
       setSyncState((current) => ({ phase: 'saving', lastSuccessAt: current.lastSuccessAt }));
-      writeNotesRoom(roomCode, stripNotebookImagePayloads(notebook))
+      writeSyncNotebook(roomCode, notebook)
         .then(() => {
           const now = Date.now();
           lastRemoteRef.current = Math.max(notebook.updatedAt || 0, now);
@@ -1536,7 +1563,32 @@ export default function FlatNotesAppV2() {
   const updateCollection = (key, updater) => patchCurrent({ [key]: updater(arr(current[key])) });
   const readImageFile = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve({ id: makeId('image'), src: reader.result, name: file.name || '', addedAt: Date.now() });
+    reader.onload = () => {
+      const originalSrc = reader.result;
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, MAX_SYNC_IMAGE_EDGE / Math.max(img.width, img.height));
+        if (!Number.isFinite(scale) || scale >= 1) {
+          resolve({ id: makeId('image'), src: originalSrc, name: file.name || '', addedAt: Date.now(), storage: 'inline' });
+          return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const context = canvas.getContext('2d');
+        context.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve({
+          id: makeId('image'),
+          src: canvas.toDataURL('image/jpeg', SYNC_IMAGE_QUALITY),
+          name: file.name || '',
+          addedAt: Date.now(),
+          storage: 'inline',
+        });
+      };
+      img.onerror = () => resolve({ id: makeId('image'), src: originalSrc, name: file.name || '', addedAt: Date.now(), storage: 'inline' });
+      img.src = originalSrc;
+    };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
