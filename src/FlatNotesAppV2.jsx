@@ -197,25 +197,37 @@ const normalizeTasks = (tasks) => arr(tasks).map((task) => ({
   text: task.text || '',
   done: Boolean(task.done),
 }));
+const isLocalImageSrc = (src) => typeof src === 'string' && src.startsWith('data:image/');
+const imageSrcKind = (src) => {
+  if (!src) return 'empty';
+  if (isLocalImageSrc(src)) return 'data-url';
+  if (/^https?:\/\//i.test(src)) return 'http-url-accidentally-in-src';
+  if (String(src).startsWith('blob:')) return 'blob-url';
+  return 'other';
+};
+
 const normalizeImages = (images) => arr(images).map((image) => {
   const id = image.id || image.srcRef || makeId('image');
-  const src = image.src || image.dataUrl || image.url || '';
+  const src = isLocalImageSrc(image.src || image.dataUrl || '') ? (image.src || image.dataUrl || '') : '';
+  const url = image.url || (/^https?:\/\//i.test(image.src || '') ? image.src : '');
   const srcRef = image.srcRef || id;
   return {
     id,
     src,
-    url: image.url || '',
+    url,
     storagePath: image.storagePath || '',
     width: image.width || 0,
     height: image.height || 0,
     srcRef,
-    storage: image.storage || (image.url || image.storagePath ? 'firebase-storage' : (src ? 'inline' : 'indexeddb')),
+    storage: image.storage || (url || image.storagePath ? 'firebase-storage' : (src ? 'indexeddb' : 'indexeddb')),
     name: image.name || '',
     addedAt: image.addedAt || Date.now(),
-    missing: Boolean(image.missing && !src),
+    missing: Boolean(image.missing && !src && !url),
     priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
+    uploadStatus: image.uploadStatus || (url && image.storagePath ? 'uploaded' : ''),
+    uploadError: image.uploadError || '',
   };
-}).filter((image) => image.src || image.srcRef);
+}).filter((image) => image.src || image.url || image.srcRef);
 const normalizeSection = (section = {}) => ({
   notes: section.notes || '',
   links: normalizeLinks(section.links),
@@ -295,7 +307,9 @@ const stripNotebookImagePayloads = (notebook) => normalizeNotebook({
       storage: image.url || image.storagePath ? 'firebase-storage' : (image.storage === 'missing' ? 'missing' : 'indexeddb'),
       name: image.name || '',
       addedAt: image.addedAt || Date.now(),
-      missing: Boolean(image.missing && !image.src),
+      missing: Boolean(image.missing && !image.src && !image.url),
+      uploadStatus: image.uploadStatus || (image.url && image.storagePath ? 'uploaded' : ''),
+      uploadError: image.uploadError || '',
       priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
     })),
   })),
@@ -312,6 +326,8 @@ const stripImageForCloudMetadata = (image) => ({
   name: image.name || '',
   addedAt: image.addedAt || Date.now(),
   missing: Boolean(image.missing && !image.src && !image.url),
+  uploadStatus: image.uploadStatus || (image.url && image.storagePath ? 'uploaded' : ''),
+  uploadError: image.uploadError || '',
   priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
 });
 
@@ -327,10 +343,10 @@ const notebookWithSyncableImages = (notebook) => normalizeNotebook({
       storagePath: image.storagePath || '',
       width: image.width || 0,
       height: image.height || 0,
-      storage: image.src ? 'inline' : (image.storage === 'missing' ? 'missing' : 'indexeddb'),
+      storage: image.url || image.storagePath ? 'firebase-storage' : (image.src ? 'indexeddb' : (image.storage === 'missing' ? 'missing' : 'indexeddb')),
       name: image.name || '',
       addedAt: image.addedAt || Date.now(),
-      missing: Boolean(image.missing && !image.src),
+      missing: Boolean(image.missing && !image.src && !image.url),
       priority: Math.max(-2, Math.min(3, Number(image.priority) || 0)),
     })),
   })),
@@ -362,6 +378,58 @@ const imageDebugEnabled = () => {
 
 const debugImages = (label, notebook) => {
   if (imageDebugEnabled()) console.info(`[FlatNotes image sync] ${label}`, summarizeImagesForDebug(notebook));
+};
+
+const imageUrlHost = (url) => {
+  try { return url ? new URL(url).host : ''; } catch { return ''; }
+};
+
+const collectImageDebugRows = async (notebook, roomName) => {
+  const normalized = normalizeNotebook(notebook);
+  const ids = notebookImageIds(normalized);
+  let byId = new Map();
+  let dbError = '';
+  if (ids.length) {
+    try {
+      const loaded = await withImageStore('readonly', (store) => Promise.all(
+        ids.map(async (id) => [id, await requestToPromise(store.get(id))]),
+      ));
+      byId = new Map(loaded);
+    } catch (error) {
+      dbError = describeError(error) || 'IndexedDB error';
+    }
+  }
+
+  const rows = [];
+  forEachNotebookImage(normalized, (image, room) => {
+    const stored = byId.get(image.srcRef || image.id);
+    rows.push({
+      room: roomName || room.name || '',
+      id: image.id,
+      name: image.name || '',
+      hasLocalSrc: Boolean(image.src),
+      localSrcKind: imageSrcKind(image.src),
+      srcLength: image.src?.length || 0,
+      hasRemoteUrl: Boolean(image.url),
+      urlHost: imageUrlHost(image.url),
+      storage: image.storage || '',
+      storagePath: image.storagePath || '',
+      srcRef: image.srcRef || image.id,
+      missing: Boolean(image.missing),
+      indexedDbStatus: dbError ? `error: ${dbError}` : stored?.src ? 'found' : 'missing',
+      uploadStatus: image.uploadStatus || (image.url && image.storagePath ? 'uploaded' : image.src ? 'pending' : 'not-started'),
+      lastUploadError: image.uploadError || '',
+      recoverableFromIndexedDb: Boolean(stored?.src),
+    });
+  });
+  const summary = {
+    totalImages: rows.length,
+    renderableNow: rows.filter((row) => row.hasLocalSrc || row.hasRemoteUrl).length,
+    durableCloudSourcePresent: rows.filter((row) => row.hasRemoteUrl && row.storagePath).length,
+    recoverableFromIndexedDb: rows.filter((row) => row.recoverableFromIndexedDb).length,
+    unrecoverableInThisBrowser: rows.filter((row) => !row.hasLocalSrc && !row.hasRemoteUrl && !row.recoverableFromIndexedDb).length,
+  };
+  return { summary, rows };
 };
 
 const openImageDb = () => new Promise((resolve, reject) => {
@@ -405,7 +473,7 @@ const requestToPromise = (request) => new Promise((resolve, reject) => {
 const saveNotebookImages = async (notebook) => {
   const images = [];
   forEachNotebookImage(notebook, (image) => {
-    if (image.src) images.push(image);
+    if (isLocalImageSrc(image.src)) images.push(image);
   });
   if (!images.length) return;
 
@@ -467,7 +535,7 @@ const verifyNotebookPersisted = async (expected) => {
   const loaded = await loadNotebookImages(restored);
   const missingImageIds = [];
   forEachNotebookImage(loaded, (image) => {
-    if (expectedIds.has(image.id) && !image.src) missingImageIds.push(image.id);
+    if (expectedIds.has(image.id) && !image.src && !image.url) missingImageIds.push(image.id);
   });
 
   return missingImageIds.length
@@ -506,7 +574,8 @@ const writeSyncNotebook = async (roomCode, notebook) => {
   debugImages('before cloud prepare', hydrated);
   const payload = await prepareNotebookForCloud(roomCode, hydrated);
   debugImages('before Realtime Database write', payload);
-  return writeNotesRoom(roomCode, payload);
+  await writeNotesRoom(roomCode, payload);
+  return payload;
 };
 
 const prepareNotebookForCloud = async (roomCode, notebook) => {
@@ -517,13 +586,23 @@ const prepareNotebookForCloud = async (roomCode, notebook) => {
       if (image.url || image.storagePath) return stripImageForCloudMetadata(image);
       if (!image.src) return stripImageForCloudMetadata(image);
 
-      const uploaded = await uploadNoteImage(roomCode, image);
+      const uploadingImage = { ...image, uploadStatus: 'uploading', uploadError: '' };
+      let uploaded;
+      try {
+        uploaded = await uploadNoteImage(roomCode, uploadingImage);
+      } catch (error) {
+        const uploadError = new Error(`Obrázok ${image.name || image.id}: ${describeFirebaseError(error)}`);
+        uploadError.code = error?.code;
+        throw uploadError;
+      }
       return stripImageForCloudMetadata({
         ...image,
         url: uploaded.url,
         storagePath: uploaded.storagePath,
         storage: 'firebase-storage',
         missing: false,
+        uploadStatus: 'uploaded',
+        uploadError: '',
       });
     })),
   })));
@@ -559,7 +638,17 @@ const mergeImages = (localImages, remoteImages) => {
   arr(remoteImages).forEach((image) => merged.set(image.id, image));
   arr(localImages).forEach((image) => {
     const existing = merged.get(image.id);
-    merged.set(image.id, existing ? { ...existing, ...image, src: image.src || existing.src, url: image.url || existing.url, storagePath: image.storagePath || existing.storagePath } : image);
+    merged.set(image.id, existing ? {
+      ...existing,
+      ...image,
+      src: image.src || existing.src || '',
+      url: image.url || existing.url || '',
+      storagePath: image.storagePath || existing.storagePath || '',
+      storage: image.url || existing.url || image.storagePath || existing.storagePath ? 'firebase-storage' : (image.src || existing.src ? 'indexeddb' : (image.storage === 'missing' && !existing.src && !existing.url ? 'missing' : existing.storage || image.storage)),
+      missing: Boolean((image.missing || existing.missing) && !(image.src || existing.src) && !(image.url || existing.url)),
+      uploadStatus: image.uploadStatus || existing.uploadStatus || '',
+      uploadError: image.uploadError || existing.uploadError || '',
+    } : image);
   });
   return [...merged.values()].sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
 };
@@ -1449,6 +1538,57 @@ function MobileMoodBoard({ title, images, isGlobal, mode, onModeChange, onAddIma
   );
 }
 
+
+function ImageDebugPanel({ debug }) {
+  if (!debug) return null;
+  const { summary = {}, rows = [] } = debug;
+  return (
+    <section className="fixed bottom-3 left-3 right-3 z-[80] max-h-[45dvh] overflow-auto rounded-2xl border border-amber-300 bg-white/95 p-3 text-xs shadow-2xl backdrop-blur dark:border-amber-700 dark:bg-stone-950/95">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="font-bold text-amber-800 dark:text-amber-100">FlatNotes image debug · ?debugImages=1</p>
+          <p className="text-stone-600 dark:text-stone-300">Room: {debug.room || 'lokálne'}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-stone-700 dark:text-stone-200 sm:grid-cols-5">
+          <span>Total: <strong>{summary.totalImages || 0}</strong></span>
+          <span>Renderable: <strong>{summary.renderableNow || 0}</strong></span>
+          <span>Cloud: <strong>{summary.durableCloudSourcePresent || 0}</strong></span>
+          <span>IDB: <strong>{summary.recoverableFromIndexedDb || 0}</strong></span>
+          <span>Unrecoverable: <strong>{summary.unrecoverableInThisBrowser || 0}</strong></span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse text-left">
+          <thead className="sticky top-0 bg-amber-50 text-amber-900 dark:bg-stone-900 dark:text-amber-100">
+            <tr>{['room','id','name','hasLocalSrc','localSrcKind','src length','hasRemoteUrl','url host','storage','storagePath','srcRef','missing','IndexedDB','upload','last error'].map((head) => <th key={head} className="border border-amber-200 px-2 py-1 dark:border-stone-700">{head}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${row.room}-${row.id}`} className="odd:bg-stone-50 dark:odd:bg-stone-900/70">
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.room}</td>
+                <td className="border border-stone-200 px-2 py-1 font-mono dark:border-stone-800">{row.id}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.name}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{String(row.hasLocalSrc)}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.localSrcKind}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.srcLength}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{String(row.hasRemoteUrl)}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.urlHost}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.storage}</td>
+                <td className="border border-stone-200 px-2 py-1 font-mono dark:border-stone-800">{row.storagePath}</td>
+                <td className="border border-stone-200 px-2 py-1 font-mono dark:border-stone-800">{row.srcRef}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{String(row.missing)}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.indexedDbStatus}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.uploadStatus}</td>
+                <td className="border border-stone-200 px-2 py-1 dark:border-stone-800">{row.lastUploadError}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function TextModal({ value, onChange, onClose, onCopy, onDownload, onImport, onReset }) {
   return (
     <div className="fixed inset-0 z-[70] flex bg-black/50 p-3 md:items-center md:justify-center" onClick={onClose}>
@@ -1510,6 +1650,7 @@ export default function FlatNotesAppV2() {
   const [boardOpen, setBoardOpen] = useState(loadBoardOpen);
   const [boardMode, setBoardMode] = useState(loadBoardMode);
   const [boardWidth, setBoardWidth] = useState(loadBoardWidth);
+  const [imageDebug, setImageDebug] = useState(null);
   const fileRef = useRef(null);
   const notebookRef = useRef(notebook);
   const localEditRef = useRef(false);
@@ -1519,6 +1660,14 @@ export default function FlatNotesAppV2() {
   const noticeTimerRef = useRef(null);
 
   useEffect(() => { document.title = 'FlatNotes'; }, []);
+  useEffect(() => {
+    if (!imageDebugEnabled()) { setImageDebug(null); return undefined; }
+    let cancelled = false;
+    collectImageDebugRows(notebook, roomCode).then((debug) => {
+      if (!cancelled) setImageDebug({ ...debug, room: roomCode || 'lokálne' });
+    });
+    return () => { cancelled = true; };
+  }, [notebook, roomCode]);
   useEffect(() => {
     let cancelled = false;
     notebookRef.current = notebook;
@@ -1927,9 +2076,10 @@ export default function FlatNotesAppV2() {
         });
         return found;
       }).length;
-      await writeSyncNotebook(roomCode, hydrated);
-      setNotebook(hydrated);
-      const stillMissing = missingRenderableImageIds(hydrated).length;
+      const uploadedNotebook = await writeSyncNotebook(roomCode, hydrated);
+      const mergedAfterUpload = mergeNotebooks(hydrated, uploadedNotebook);
+      setNotebook(mergedAfterUpload);
+      const stillMissing = missingRenderableImageIds(mergedAfterUpload).length;
       setSyncState({ phase: 'synced', lastSuccessAt: Date.now() });
       showNotice(recoverable
         ? `Oprava nahrala ${recoverable} obrázkov. Chýba ešte ${stillMissing}.`
@@ -1944,6 +2094,7 @@ export default function FlatNotesAppV2() {
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-stone-100 text-stone-900 dark:bg-stone-950 dark:text-stone-100">
+      <ImageDebugPanel debug={imageDebug} />
       <header className="safe-top flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-3 py-3 dark:border-stone-800 dark:bg-stone-900 md:px-5">
         <div className="flex min-w-0 items-center gap-2">
           <button type="button" onClick={() => setMobileNav(true)} className="h-10 w-10 rounded-xl border border-stone-200 text-stone-700 dark:border-stone-700 dark:text-stone-200 md:hidden">☰</button>
