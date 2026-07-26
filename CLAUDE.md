@@ -4,7 +4,7 @@ This file provides guidance for AI assistants working on this codebase.
 
 ## Project Overview
 
-**Flat Analyzer** is a React single-page application for comparing Prague apartment listings. Users paste or fetch listing text from Czech real estate sites, the app extracts structured data via regex, and offers are displayed as a radar chart for side-by-side comparison. Optional Firebase integration allows real-time sharing via 6-character room codes.
+**Flat Analyzer** is a React single-page application for comparing Prague apartment listings. Users paste or fetch listing text from Czech real estate sites, the app extracts structured data via regex, and offers are displayed as a radar chart for side-by-side comparison. Optional Firebase integration allows real-time sharing via 6-character room codes. An optional authenticated Firebase Function exposes REST and Streamable HTTP MCP endpoints so browsing agents can create listings in a permitted room.
 
 The UI is in Czech; the target audience is Prague apartment hunters.
 
@@ -21,6 +21,12 @@ flat-analyzer/
 │   ├── firebase.js    # Firebase Realtime Database integration
 │   ├── utils.js       # Parsing, normalization, storage utilities
 │   └── index.css      # Global styles (Tailwind directives)
+├── functions/
+│   ├── src/            # REST, MCP, room policy, and Firebase Admin store
+│   └── test/           # Node test runner + end-to-end MCP tests
+├── docs/
+│   └── agent-connector.md
+├── firebase.json       # Firebase Functions codebase
 ├── index.html         # HTML root (lang="cs", mobile safe-area viewport)
 ├── vite.config.js     # Vite config (base: './' for GitHub Pages)
 ├── tailwind.config.js # Tailwind content paths + theme
@@ -31,7 +37,7 @@ flat-analyzer/
         └── deploy.yml # CI/CD: push to main → build → GitHub Pages
 ```
 
-There is no backend, no REST API, and no test suite.
+The frontend remains a static SPA. The optional `functions/` codebase is the only backend and is deployed separately.
 
 ---
 
@@ -44,6 +50,7 @@ There is no backend, no REST API, and no test suite.
 | CSS | Tailwind CSS | 3.4.17 |
 | Charts | Recharts | 2.15.0 |
 | Cloud sync | Firebase Realtime Database | 11.0.0 |
+| Agent connector | Firebase Functions + Firebase Admin + MCP SDK | Node.js 22 |
 | Deployment | GitHub Pages | via Actions |
 
 ---
@@ -55,9 +62,10 @@ npm install       # Install dependencies
 npm run dev       # Start dev server at http://localhost:5173 (HMR enabled)
 npm run build     # Build production bundle to dist/
 npm run preview   # Preview production build locally
+npm run test:connector # Run connector unit and MCP transport tests
 ```
 
-There is no linter, formatter, or test runner configured. No pre-commit hooks exist.
+There is no linter, formatter, or pre-commit hook. Connector tests use Node's built-in test runner.
 
 ---
 
@@ -105,6 +113,16 @@ Optional real-time collaboration. Firebase credentials are **hardcoded** (intent
 - `generateRoomCode()` — 6-char alphanumeric code excluding visually ambiguous characters (i, l, o, 1, 0).
 - `writeRoom(roomId, offers, parameterRanges, palette)` — Syncs state to Firebase. Sanitizes keys: replaces `/` with `|`.
 - `subscribeToRoom(roomId, callback)` — Real-time listener; calls `callback(data)` on each update.
+
+### `functions/` — Agent Connector
+
+- `src/app.js` — bearer-authenticated REST routes and stateless Streamable HTTP MCP transport
+- `src/mcpServer.js` — `create_listing` and `list_listings` tool contracts
+- `src/listingModel.js` — validation, canonical URL deduplication, and mapping to the existing offer model
+- `src/firebaseStore.js` — atomic Firebase Admin transactions
+- `src/roomPolicy.js` — default-room resolution and explicit allowlisting
+
+The connector never fetches listing pages. A browsing agent supplies source-backed facts and the real URL. The write is idempotent by canonical URL.
 
 ### `src/App.jsx` — Application Component (1951 lines)
 
@@ -241,6 +259,17 @@ Offer added to state (useState)      ← src/App.jsx FlatOfferAnalyzer
                │
                ▼
           Other clients subscribeToRoom() → state update → re-render
+
+Browsing agent
+     │
+     ▼
+create_listing / POST /api/v1/listings
+     │
+     ▼
+Bearer auth + room allowlist + validation
+     │
+     ▼
+Firebase Admin transaction → browser subscription → re-render
 ```
 
 ---
@@ -254,11 +283,14 @@ Pushes to `main` trigger `.github/workflows/deploy.yml`:
 
 Vite is configured with `base: './'` for relative asset paths on GitHub Pages. Do not change this to `/` without also updating the deployment workflow.
 
+The connector is not deployed by GitHub Pages. Follow `docs/agent-connector.md` to configure its secret, room allowlist, and separate Firebase Functions deployment.
+
 ---
 
 ## Known Limitations & Planned Features
 
-- **No test suite** — there are zero tests. Be cautious when modifying parsing logic in `utils.js`.
+- **Frontend parser still has no tests** — connector tests do not cover `src/utils.js`; be cautious when modifying browser-side parsing.
+- **Connector requires a separate deploy** — GitHub Pages does not run the Firebase Function.
 - **Claude API integration** — mentioned in README but not yet implemented. The planned feature would provide AI-assisted extraction as an alternative to regex.
 - **Firebase credentials are hardcoded** — acceptable for this project scope; do not refactor to env vars without a corresponding deployment change.
 - **App.jsx is monolithic** — all components live in one 1951-line file. This is the current project style; do not split into separate files without explicit instruction.

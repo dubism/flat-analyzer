@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:connector": "npm --prefix functions test",
     "consolidate:notes": "node scripts/consolidate-room-notes.mjs"
   },
   "dependencies": {
