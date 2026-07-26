@@ -17,6 +17,8 @@ import {
   formatPrice,
   getNormalizedValue,
   getRawValue,
+  getOfferCreatedAt,
+  withOfferCreatedAt,
   normalizeSubjectiveRatings,
   calculateSubjectiveRatings,
   parseListingTextWithSources,
@@ -48,7 +50,9 @@ const T = {
     sortGraphScore: 'Skóre grafu', sortManual: 'Ručně', sortPrice: 'Cena',
     chartScoreTooltip: 'Součet skóre aktivních parametrů (0–10 za parametr). Objektivní parametry jsou normalizovány podle nastavených rozsahů — jejich změna ovlivní skóre.',
     sortSize: 'Plocha', sortPricePerSqm: 'Kč/m²', sortName: 'Název',
-    groupNone: 'Bez skupin', groupLocation: 'Lokalita', groupRenovation: 'Rekonstrukce',
+    groupNone: 'Bez skupin', groupDateAdded: 'Datum přidání',
+    groupLocation: 'Lokalita', groupRenovation: 'Rekonstrukce',
+    dateToday: 'Dnes', dateYesterday: 'Včera', dateUnknown: 'Neznámé datum',
     soldSection: 'Prodané',
     // Detail view
     backToList: '← Seznam', notesPlaceholder: 'Poznámky...', ratingsSection: 'Hodnocení',
@@ -131,7 +135,9 @@ const T = {
     sortGraphScore: 'Chart score', sortManual: 'Manual', sortPrice: 'Price',
     chartScoreTooltip: 'Sum of enabled parameter scores (0–10 per parameter). Objective parameters are scaled by configured ranges—adjusting ranges shifts scores.',
     sortSize: 'Interior area', sortPricePerSqm: 'Kč/m²', sortName: 'Name',
-    groupNone: 'None', groupLocation: 'Location', groupRenovation: 'Reno',
+    groupNone: 'None', groupDateAdded: 'Date added',
+    groupLocation: 'Location', groupRenovation: 'Reno',
+    dateToday: 'Today', dateYesterday: 'Yesterday', dateUnknown: 'Unknown date',
     soldSection: 'Sold',
     backToList: '← List', notesPlaceholder: 'Notes...', ratingsSection: 'Ratings',
     selectOffer: 'Select an offer from the list', goToList: 'Go to list',
@@ -201,6 +207,38 @@ const T = {
 // Updated synchronously when user toggles language.
 let _lang = (typeof localStorage !== 'undefined' && localStorage.getItem('flatAnalyzerLang')) || 'cs';
 const t = (key) => T[_lang]?.[key] ?? T.en?.[key] ?? key;
+
+const getDateAddedGroup = (offer) => {
+  const timestamp = getOfferCreatedAt(offer, 0);
+  const date = new Date(timestamp);
+  if (!timestamp || Number.isNaN(date.getTime())) {
+    return { key: 'date-unknown', label: t('dateUnknown'), sortValue: -Infinity };
+  }
+
+  const dayNumber = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const now = new Date();
+  const todayNumber = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const ageInDays = Math.round((todayNumber - dayNumber) / 86400000);
+
+  let label;
+  if (ageInDays === 0) label = t('dateToday');
+  else if (ageInDays === 1) label = t('dateYesterday');
+  else {
+    label = [
+      String(date.getDate()).padStart(2, '0'),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      date.getFullYear(),
+    ].join('.');
+  }
+
+  const key = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  return { key: `date-${key}`, label, sortValue: dayNumber };
+};
 
 // ============================================================================
 // HOOKS
@@ -1784,7 +1822,7 @@ export default function FlatOfferAnalyzer() {
   const [currentOfferId, setCurrentOfferId] = useState(null);
   const [hoveredOfferId, setHoveredOfferId] = useState(null);
   const [sortCriterion, setSortCriterion] = useState('graphScore');
-  const [groupCriterion, setGroupCriterion] = useState('none');
+  const [groupCriterion, setGroupCriterion] = useState('dateAdded');
   const [modal, setModal] = useState(null);
   const [editingOffer, setEditingOffer] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -1924,10 +1962,11 @@ export default function FlatOfferAnalyzer() {
       if (data.offers) {
         // Firebase may return arrays as objects with numeric keys
         const offersArr = Array.isArray(data.offers) ? data.offers : Object.values(data.offers);
-        const normalizedRemote = offersArr.filter(Boolean).map(o => ({
+        const remoteReceivedAt = Date.now();
+        const normalizedRemote = offersArr.filter(Boolean).map(o => withOfferCreatedAt({
           ...o,
           subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
-        }));
+        }, remoteReceivedAt));
         // Merge local + remote (union by id, dedup by content)
         setOffers(prev => {
           const merged = mergeOffers(prev, normalizedRemote);
@@ -2106,20 +2145,31 @@ export default function FlatOfferAnalyzer() {
     if (groupCriterion === 'none') {
       groups = [{ key: 'all', label: null, offers: sorted }];
     } else {
-      const groupMap = {};
+      const groupMap = new Map();
       sorted.forEach(o => {
-        const k = groupCriterion === 'location' ? (o.data?.LOCATION || 'Unknown') : (o.data?.RENOVATION || 'Unknown');
-        if (!groupMap[k]) groupMap[k] = [];
-        groupMap[k].push(o);
+        let group;
+        if (groupCriterion === 'dateAdded') {
+          group = getDateAddedGroup(o);
+        } else {
+          const label = groupCriterion === 'location'
+            ? (o.data?.LOCATION || 'Unknown')
+            : (o.data?.RENOVATION || 'Unknown');
+          group = { key: `${groupCriterion}-${label}`, label, sortValue: 0 };
+        }
+        if (!groupMap.has(group.key)) groupMap.set(group.key, { ...group, offers: [] });
+        groupMap.get(group.key).offers.push(o);
       });
-      groups = Object.entries(groupMap).map(([k, os]) => ({ key: k, label: k, offers: os }));
+      groups = Array.from(groupMap.values());
+      if (groupCriterion === 'dateAdded') {
+        groups.sort((a, b) => b.sortValue - a.sortValue);
+      }
     }
 
     if (soldOffers.length > 0) {
       groups.push({ key: 'sold', label: 'Sold', offers: soldOffers, isSold: true });
     }
     return groups;
-  }, [offers, sortCriterion, groupCriterion, enabledParams, parameterRanges, filters, passesFilter]);
+  }, [offers, sortCriterion, groupCriterion, enabledParams, parameterRanges, filters, passesFilter, lang]);
 
   // Flat item list for mini-list sidebar alignment (mobile)
   const flatItemList = useMemo(() => {
@@ -2175,6 +2225,7 @@ export default function FlatOfferAnalyzer() {
 
   // Actions
   const addOffer = useCallback((data) => {
+    const timestamp = Date.now();
     const newOffer = {
       id: generateId(),
       name: data.name,
@@ -2186,7 +2237,8 @@ export default function FlatOfferAnalyzer() {
       manualOrder: offers.length,
       image: data.image || null,
       sold: false,
-      updatedAt: Date.now(),
+      createdAt: timestamp,
+      updatedAt: timestamp,
     };
     setOffers(prev => [...prev, newOffer]);
     setCurrentOfferId(newOffer.id);
@@ -2320,10 +2372,11 @@ export default function FlatOfferAnalyzer() {
       try {
         const d = JSON.parse(e.target.result);
         if (d.offers && Array.isArray(d.offers)) {
-          const normalizedOffers = d.offers.map(o => ({ 
+          const importedAt = Date.now();
+          const normalizedOffers = d.offers.map(o => withOfferCreatedAt({
             ...o, 
             subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings) 
-          }));
+          }, importedAt));
           const ranges = d.meta?.parameterRanges ? { ...DEFAULT_PARAM_RANGES, ...d.meta.parameterRanges } : null;
           
           // If we have existing offers, ask what to do
@@ -2903,6 +2956,7 @@ export default function FlatOfferAnalyzer() {
                 </select>
                 <select value={groupCriterion} onChange={(e) => setGroupCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-2 bg-white">
                   <option value="none">{t('groupNone')}</option>
+                  <option value="dateAdded">{t('groupDateAdded')}</option>
                   <option value="location">{t('groupLocation')}</option>
                   <option value="renovation">{t('groupRenovation')}</option>
                 </select>
@@ -3323,9 +3377,10 @@ export default function FlatOfferAnalyzer() {
                 </optgroup>
               </select>
               <select value={groupCriterion} onChange={(e) => setGroupCriterion(e.target.value)} className="flex-1 text-xs border border-gray-300 rounded px-1 py-1 bg-white">
-                <optgroup label="Grouping"><option value="none">None</option>
-                <option value="location">Location</option>
-                <option value="renovation">Reno</option>
+                <optgroup label="Grouping"><option value="none">{t('groupNone')}</option>
+                <option value="dateAdded">{t('groupDateAdded')}</option>
+                <option value="location">{t('groupLocation')}</option>
+                <option value="renovation">{t('groupRenovation')}</option>
                 </optgroup>
               </select>
               <div className="relative flex-shrink-0">

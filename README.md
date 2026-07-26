@@ -8,6 +8,7 @@ Compare Prague apartment listings side-by-side with radar charts, AI-powered dat
 - **Radar chart comparison** — star offers to overlay them on objective (price, size, rooms…) and subjective (location, vibe, noise…) radar charts
 - **Auto-ranges** — one click to fit chart ranges to your actual data spread
 - **Import/export** — JSON file drag & drop, export your comparison set
+- **Date-added grouping** — imported batches and new offers stay organized by the day they entered the comparison
 - **Mobile layout** — bottom tab navigation, touch-optimized
 
 ## Setup

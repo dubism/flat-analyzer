@@ -17,6 +17,29 @@ import {
 
 export const generateId = () => `offer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+export const getOfferCreatedAt = (offer, fallback = 0) => {
+  const createdAt = Number(offer?.createdAt);
+  if (Number.isFinite(createdAt) && createdAt > 0) return createdAt;
+
+  const updatedAt = Number(offer?.updatedAt);
+  if (Number.isFinite(updatedAt) && updatedAt > 0) return updatedAt;
+
+  // Older offers did not store createdAt. Recover it from both legacy numeric
+  // IDs and current offer_<epoch>_<random> IDs before falling back.
+  const idTimestamp = String(offer?.id || '').match(/(?:^|_)(\d{12,13})(?:_|$)/);
+  if (idTimestamp) {
+    const timestamp = Number(idTimestamp[1]);
+    if (Number.isFinite(timestamp) && timestamp > 0) return timestamp;
+  }
+
+  return fallback;
+};
+
+export const withOfferCreatedAt = (offer, fallback = Date.now()) => ({
+  ...offer,
+  createdAt: getOfferCreatedAt(offer, fallback),
+});
+
 export const parsePrice = (priceStr) => {
   if (priceStr === null || priceStr === undefined) return null;
   if (typeof priceStr === 'number') return priceStr;
@@ -474,11 +497,12 @@ export const loadFromStorage = () => {
       for (const [k, v] of Object.entries(storedRanges)) {
         migratedRanges[RANGE_MIGRATION[k] || k] = v;
       }
+      const migrationTimestamp = Date.now();
       return {
-        offers: (parsed.offers || []).map(o => ({
+        offers: (parsed.offers || []).map(o => withOfferCreatedAt({
           ...o,
           subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
-        })),
+        }, migrationTimestamp)),
         parameterRanges: { ...DEFAULT_PARAM_RANGES, ...migratedRanges },
         palette: parsed.meta?.palette || null,
       };
@@ -503,13 +527,16 @@ export const saveToStorage = (offers, parameterRanges, palette = null) => {
   }
 };
 
-export const loadDemoOffers = () => ({
-  offers: (SAMPLE_DATA.offers || []).map(o => ({
-    ...o,
-    subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
-  })),
-  parameterRanges: { ...DEFAULT_PARAM_RANGES }
-});
+export const loadDemoOffers = () => {
+  const migrationTimestamp = Date.now();
+  return {
+    offers: (SAMPLE_DATA.offers || []).map(o => withOfferCreatedAt({
+      ...o,
+      subjectiveRatings: normalizeSubjectiveRatings(o.subjectiveRatings)
+    }, migrationTimestamp)),
+    parameterRanges: { ...DEFAULT_PARAM_RANGES }
+  };
+};
 
 // Merge two offer arrays by id — always additive, never deletes.
 // For the same id in both sources, the one with the newer updatedAt wins.
@@ -524,6 +551,15 @@ export function mergeOffers(localOffers, remoteOffers) {
     if (typeof offer.updatedAt === 'number') return offer.updatedAt;
     const m = String(offer.id || '').match(/offer_(\d+)/);
     return m ? parseInt(m[1], 10) : 0;
+  };
+
+  const preserveEarliestCreatedAt = (winner, ...versions) => {
+    const timestamps = [winner, ...versions]
+      .map(offer => getOfferCreatedAt(offer, 0))
+      .filter(timestamp => timestamp > 0);
+    return timestamps.length
+      ? { ...winner, createdAt: Math.min(...timestamps) }
+      : winner;
   };
 
   // Build a content fingerprint for deduplication across devices.
@@ -544,8 +580,10 @@ export function mergeOffers(localOffers, remoteOffers) {
     if (!offer.id) continue;
     if (!merged.has(offer.id)) {
       merged.set(offer.id, offer);
-    } else if (getTimestamp(offer) > getTimestamp(merged.get(offer.id))) {
-      merged.set(offer.id, offer);
+    } else {
+      const existing = merged.get(offer.id);
+      const winner = getTimestamp(offer) > getTimestamp(existing) ? offer : existing;
+      merged.set(offer.id, preserveEarliestCreatedAt(winner, existing, offer));
     }
   }
 
@@ -559,9 +597,11 @@ export function mergeOffers(localOffers, remoteOffers) {
       const existingId = contentMap.get(ck);
       const existing = merged.get(existingId);
       if (getTimestamp(offer) > getTimestamp(existing)) {
+        merged.set(id, preserveEarliestCreatedAt(offer, existing));
         idsToRemove.add(existingId);
         contentMap.set(ck, id);
       } else {
+        merged.set(existingId, preserveEarliestCreatedAt(existing, offer));
         idsToRemove.add(id);
       }
     } else {
